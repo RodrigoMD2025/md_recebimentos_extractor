@@ -1,4 +1,4 @@
-# 📊 Extração Automática de Relatorio
+# 🧑🏻‍💻​ Extração Automática de Relatorio
 
 Automação completa para extração de dados de recebimentos do sistema MD usando GitHub Actions, com processamento de múltiplos anos e notificações via Telegram.
 
