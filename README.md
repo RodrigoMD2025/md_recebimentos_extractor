@@ -193,13 +193,13 @@ Em caso de falha, os logs são automaticamente salvos como artefatos do GitHub A
 ## 🛠️ Dependências
 
 ```txt
-pandas>=2.0.0          # Manipulação de dados
+pandas>=2.0.0           # Manipulação de dados
 playwright>=1.40.0      # Automação web
 beautifulsoup4>=4.12.0  # Parse HTML
-tqdm>=4.65.0           # Barras de progresso
-aiohttp>=3.8.0         # Cliente HTTP assíncrono
-aiofiles>=23.0.0       # Operações de arquivo assíncronas
-openpyxl>=3.1.0        # Manipulação de Excel
+tqdm>=4.65.0            # Barras de progresso
+aiohttp>=3.8.0          # Cliente HTTP assíncrono
+aiofiles>=23.0.0        # Operações de arquivo assíncronas
+openpyxl>=3.1.0         # Manipulação de Excel
 ```
 
 ## 🔒 Segurança
