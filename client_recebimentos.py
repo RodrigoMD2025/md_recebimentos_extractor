@@ -23,7 +23,7 @@ logging.basicConfig(
 
 # Configurações usando variáveis de ambiente
 TELEGRAM_BOT_TOKEN = os.getenv("BOT_TOKEN")
-CLIENT_EMAIL = os.getenv("CLIENT_EMAIL", "suporte@musicdelivery.com.br")
+CLIENT_EMAIL = os.getenv("CLIENT_EMAIL")
 CLIENT_SENHA = os.getenv("CLIENT_SENHA")
 DEFAULT_CHAT_ID = os.getenv("DEFAULT_CHAT_ID")
 
