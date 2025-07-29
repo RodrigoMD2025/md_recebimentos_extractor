@@ -1,4 +1,4 @@
-name: Extração de Recebimentos Music Delivery
+name: Recebimentos MD
 
 on:
   # Execução manual via workflow_dispatch
