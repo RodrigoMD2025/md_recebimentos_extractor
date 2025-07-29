@@ -5,7 +5,7 @@ Automação completa para extração de dados de recebimentos do sistema MD usan
 ## 🚀 Características Principais
 
 - ✅ **Extração Automática**: Login e navegação automatizada no sistema
-- ✅ **Processamento Multi-Ano**: Execução paralela para anos 2022, 2023 e 2024
+- ✅ **Processamento Multi-Ano**: Execução em paralelo para os anos
 - ✅ **Análise Detalhada**: Extração de playlists, períodos e contagem de faixas
 - ✅ **Sistema de Retry**: Tentativas automáticas para links com falha
 - ✅ **Notificações Telegram**: Relatórios detalhados e arquivos Excel
