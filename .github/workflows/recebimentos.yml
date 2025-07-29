@@ -59,7 +59,7 @@ jobs:
         CLIENT_SENHA: ${{ secrets.CLIENT_SENHA }}
         DEFAULT_CHAT_ID: ${{ secrets.DEFAULT_CHAT_ID }}
       run: |
-        python recebimentos_extractor.py
+        python client_recebimentos.py
 
     - name: Upload de logs em caso de erro
       if: failure()
