@@ -135,9 +135,7 @@ jobs:
         DEFAULT_CHAT_ID: ${{ secrets.DEFAULT_CHAT_ID }}
       run: |
         python recebimentos_extractor.py
-    
-
-    
+  
     - name: Limpeza de arquivos temporários
       if: always()
       run: |
