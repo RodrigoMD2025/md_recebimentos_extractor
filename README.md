@@ -1,6 +1,6 @@
 # Extração de Recebimentos - GitHub Actions
 
-Este projeto automatiza a extração de dados de recebimentos do sistema Music Delivery usando GitHub Actions.
+Este projeto automatiza a extração de dados de recebimentos do sistema MD usando GitHub Actions.
 
 ## 🔧 Configuração
 
