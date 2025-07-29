@@ -10,6 +10,12 @@ from bs4 import BeautifulSoup
 from tqdm import tqdm
 from datetime import datetime
 from zoneinfo import ZoneInfo
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--ano', type=str, default="2025", help="Ano do relatório")
+args = parser.parse_args()
+ANO_RELATORIO = args.ano
 
 # Configuração do log para GitHub Actions
 logging.basicConfig(
@@ -30,7 +36,6 @@ DEFAULT_CHAT_ID = os.getenv("DEFAULT_CHAT_ID")
 # URLs do sistema
 URL_LOGIN = "http://sistema.musicdelivery.com.br/login?login_error"
 URL_RECEBIMENTOS = "http://sistema.musicdelivery.com.br/financeiro/royalties/recebimentos"
-ANO_RELATORIO = "2025"
 
 async def navegar_pelos_meses(page, meses, nomes_meses):
     """Navega por todos os meses para carregar os dados no sistema."""
