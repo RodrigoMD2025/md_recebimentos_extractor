@@ -19,7 +19,7 @@ jobs:
 
     strategy:
       matrix:
-        ano: ["2022"]
+        ano: ["2023","2024"]
 
     steps:
     - name: Checkout do código
