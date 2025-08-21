@@ -1,6 +1,6 @@
 # 🧑🏻‍💻​ MD Recebimentos Extractor
 
-Automação completa para extração de dados de recebimentos do sistema MD usando GitHub Actions, com processamento de múltiplos anos e notificações via Telegram.
+Automação completa para extração de dados de recebimentos do sistema usando GitHub Actions, com processamento de múltiplos anos e notificações via Telegram.
 
 ## 🚀 Características Principais
 
