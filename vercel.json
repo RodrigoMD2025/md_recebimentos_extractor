@@ -5,8 +5,10 @@
     { "src": "api/**/*.js", "use": "@vercel/node" }
   ],
   "routes": [
+    { "handle": "filesystem" },
     { "src": "/api/(.*)", "dest": "/api/$1" },
-    { "src": "/(.*)", "dest": "/docs/$1" }
+    { "src": "/(.*)", "dest": "/docs/$1" },
+    { "src": "/", "dest": "/docs/index.html" }
   ],
   "headers": [
     {
