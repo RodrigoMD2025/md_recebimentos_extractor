@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Dashboard para monitorar e gerenciar as extrações de recebimentos do sistema MD" />
+  <title>MD Recebimentos — Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="css/style.css" />
+  <script>
+    tailwind.config = { darkMode: "class" };
+  </script>
+  <script type="module" src="js/firebase-init.js"></script>
+  <script src="js/auth.js"></script>
+</head>
+<body class="bg-slate-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 min-h-screen flex">
+  <div id="sidebar-overlay" class="fixed inset-0 bg-black/50 z-20 lg:hidden hidden" onclick="toggleSidebar()"></div>
+
+  <aside id="sidebar" class="fixed lg:static inset-y-0 left-0 w-64 bg-gradient-to-b from-blue-900 via-blue-900 to-indigo-900 text-white z-30 transform -translate-x-full lg:translate-x-0 transition-transform duration-300 flex flex-col">
+    <div class="p-5 border-b border-white/10">
+      <p class="font-bold text-sm">MD Recebimentos</p>
+      <p class="text-xs text-blue-300">Extractor Dashboard</p>
+    </div>
+    <nav class="flex-1 p-4 space-y-1">
+      <a href="#" class="nav-item active" data-section="dashboard">Dashboard</a>
+      <a href="#" class="nav-item" data-section="run">Executar</a>
+      <a href="#" class="nav-item" data-section="history">Histórico</a>
+      <a href="#" class="nav-item" data-section="dados">Dados</a>
+      <a href="#" class="nav-item" data-section="settings">Configurações</a>
+    </nav>
+    <div class="p-4 border-t border-white/10">
+      <div class="flex items-center gap-2 text-xs text-blue-300">
+        <div id="sidebar-status-dot" class="w-2 h-2 rounded-full bg-gray-400"></div>
+        <span id="sidebar</head>-status-text">Sem conexão</span>
+      </div>
+    </div>
+ </title></script> </aside>
+
+  <div class="flex-1 flex flex-col min-w-0">
+    <header class="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 px-4 sm:px-6 py-4 flex items-center justify-between sticky top-0 z-10">
+      <div class="flex items-center gap-3">
+        <button onclick="toggleSidebar()" class="lg:hidden p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800">☰</button>
+        <h2 id="page-title" class="text-lg sm:text-xl font-semibold">Dashboard</h2>
+      </div>
+      <div class="flex items-center gap-2 sm:gap-3">
+        <div class="hidden sm:flex items-center gap-2 text-sm">
+          <div id="status-dot" class="w-2 h-2 rounded-full bg-gray-300"></div>
+          <span id="status-text" class="text-gray-500 dark:text-gray-400 text-xs">Sem conexão</span>
+        </div>
+        <button onclick="refreshData()" id="refresh-btn" class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800">↻</button>
+        <button onclick="toggleTheme()" class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800">🌗</button>
+        <div class="hidden sm:block w-px h-6 bg-gray-200 dark:bg-gray-700"></div>
+        <div class="flex items-center gap-2">
+          <div id="user-avatar" class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-bold">?</div>
+          <span id="user-email" class="hidden sm:block text-xs text-gray-600 dark:text-gray-400 max-w-[130px] truncate"></span>
+        </div>
+        <button onclick="Auth.logout()" class="px-3 py-1.5 text-xs font-medium text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-lg">Sair</button>
+      </div>
+    </header>
+
+    <main class="flex-1 p-4 sm:p-6 overflow-auto">
+      <section id="section-dashboard" class="section-content space-y-4">
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div class="stat-card bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-200 dark:border-gray-800"><p class="text-xs text-gray-500">Total de Execuções</p><p id="stat-total" class="text-2xl font-bold">--</p></div>
+          <div class="stat-card bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-200 dark:border-gray-800"><p class="text-xs text-gray-500">Sucesso</p><p id="stat-success" class="text-2xl font-bold text-emerald-600">--</p></div>
+          <div class="stat-card bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-200 dark:border-gray-800"><p class="text-xs text-gray-500">Falhas</p><p id="stat-failed" class="text-2xl font-bold text-red-600">--</p></div>
+          <div class="stat-card bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-200 dark:border-gray-800"><p class="text-xs text-gray-500">Última Execução</p><p id="stat-last-date" class="text-xl font-bold">--</p><p id="stat-last-status" class="text-xs text-gray-400">--</p></div>
+        </div>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div class="bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-200 dark:border-gray-800"><canvas id="chart-donut"></canvas><p id="chart-donut-empty" class="text-center text-sm text-gray-400 hidden">Sem dados</p></div>
+          <div class="bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-200 dark:border-gray-800"><canvas id="chart-bar"></canvas><p id="chart-bar-empty" class="text-center text-sm text-gray-400 hidden">Sem dados</p></div>
+        </div>
+        <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
+          <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between"><span class="text-sm font-semibold">Execuções Recentes</span><button onclick="loadRuns()" class="text-xs text-blue-600">Atualizar</button></div>
+          <div class="overflow-x-auto">
+            <div id="dash-table-placeholder" class="p-6 text-center text-gray-400">Configure o token GitHub para ver o histórico</div>
+            <table id="dash-table" class="w-full hidden text-sm">
+              <thead class="bg-gray-50 dark:bg-gray-800/60"><tr class="text-left text-xs text-gray-500 uppercase"><th class="px-5 py-3">#</th><th class="px-5 py-3">Título</th><th class="px-5 py-3">Status</th><th class="px-5 py-3">Iniciado</th><th class="px-5 py-3">Duração</th><th class="px-5 py-3">Ação</th></tr></thead>
+              <tbody id="dash-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+        <div id="neon-preview-card" class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
+          <div class="flex items-center justify-between mb-3"><span class="text-sm font-semibold">Dados no Banco (Neon)</span><button onclick="navigateTo('dados')" class="text-xs text-blue-600">Ver tabela completa →</button></div>
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div class="bg-slate-50 dark:bg-gray-800 rounded-lg p-3 text-center"><p class="text-xs text-gray-500">Total</p><p id="neon-prev-total" class="text-xl font-bold">--</p></div>
+            <div class="bg-slate-50 dark:bg-gray-800 rounded-lg p-3 text-center"><p class="text-xs text-gray-500">Pagos</p><p id="neon-prev-pagos" class="text-xl font-bold text-emerald-600">--%</p></div>
+            <div class="bg-slate-50 dark:bg-gray-800 rounded-lg p-3 text-center"><p class="text-xs text-gray-500">Com Playlist</p><p id="neon-prev-playlist" class="text-xl font-bold text-blue-600">--%</p></div>
+            <div class="bg-slate-50 dark:bg-gray-800 rounded-lg p-3 text-center"><p class="text-xs text-gray-500">Anos</p><p id="neon-prev-anos" class="text-sm font-semibold">--</p></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="section-run" class="section-content hidden">
+        <div class="max-w-2xl mx-auto space-y-4">
+          <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
+            <label class="block text-sm font-medium mb-2">Anos para Processar</label>
+            <div id="year-checkboxes" class="flex flex-wrap gap-2 mb-3"></div>
+            <label class="block text-sm font-medium mb-2">Chat ID (opcional)</label>
+            <input id="run-chat-id" class="input-field mb-3" />
+            <label class="block text-sm font-medium mb-2">Branch</label>
+            <select id="run-branch" class="input-field mb-3"><option value="main">main</option><option value="master">master</option></select>
+            <button id="run-btn" onclick="triggerWorkflow()" class="w-full py-3 bg-blue-600 text-white rounded-xl">Iniciar Extração</button>
+          </div>
+          <div id="active-monitor" class="hidden bg-white dark:bg-gray-900 rounded-xl border border-blue-200 dark:border-blue-800 p-4">Execução em andamento...</div>
+        </div>
+      </section>
+
+      <section id="section-history" class="section-content hidden">
+        <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
+          <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
+            <span class="text-sm font-semibold">Todas as Execuções</span>
+            <div class="flex items-center gap-2">
+              <select id="filter-status" onchange="applyFilter()" class="text-xs px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800">
+                <option value="all">Todos</option>
+                <option value="success">Sucesso</option>
+                <option value="failure">Falha</option>
+                <option value="cancelled">Cancelado</option>
+                <option value="in_progress">Em andamento</option>
+              </select>
+              <button onclick="loadRuns(true)" class="text-xs text-blue-600">Atualizar</button>
+            </div>
+          </div>
+          <div class="overflow-x-auto">
+            <div id="history-placeholder" class="p-6 text-center text-gray-400">Carregando histórico...</div>
+            <table id="history-table" class="w-full hidden text-sm">
+              <thead class="bg-gray-50 dark:bg-gray-800/60"><tr class="text-left text-xs text-gray-500 uppercase"><th class="px-5 py-3">#</th><th class="px-5 py-3">Título</th><th class="px-5 py-3">Gatilho</th><th class="px-5 py-3">Status</th><th class="px-5 py-3">Iniciado</th><th class="px-5 py-3">Duração</th><th class="px-5 py-3">Logs</th></tr></thead>
+              <tbody id="history-tbody"></tbody>
+            </table>
+          </div>
+          <div id="load-more-wrap" class="hidden px-5 py-4 border-t border-gray-200 dark:border-gray-800 text-center"><button onclick="loadMoreRuns()" class="text-xs text-blue-600">Carregar mais</button></div>
+        </div>
+      </section>
+
+      <section id="section-dados" class="section-content hidden">
+        <div id="filtros-bar" class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4 mb-4">
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-3">
+            <div><label class="block text-xs font-medium text-gray-500 mb-1">Ano</label><select id="filtro-ano" class="input-field text-sm"><option value="">Todos</option></select></div>
+            <div class="lg:col-span-2"><label class="block text-xs font-medium text-gray-500 mb-1">Contratante</label><input id="filtro-contratante" class="input-field text-sm" /></div>
+            <div><label class="block text-xs font-medium text-gray-500 mb-1">Status</label><select id="filtro-status" class="input-field text-sm"><option value="">Todos</option><option value="pago">Pago</option><option value="pendente">Pendente</option><option value="cancelado">Cancelado</option></select></div>
+            <div><label class="block text-xs font-medium text-gray-500 mb-1">Playlist</label><select id="filtro-playlist" class="input-field text-sm"><option value="">Todos</option><option value="Com Playlist">Com Playlist</option><option value="Sem Playlist">Sem Playlist</option></select></div>
+            <div class="flex items-end gap-2"><button onclick="limparFiltros()" class="px-3 py-2 text-xs border border-gray-200 dark:border-gray-700 rounded-lg">Limpar</button><button onclick="exportarCSV()" class="px-3 py-2 text-xs border border-blue-200 dark:border-blue-800 rounded-lg text-blue-600">Exportar CSV</button></div>
+          </div>
+        </div>
+        <div id="stats-neon" class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
+          <div class="bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-200 dark:border-gray-800"><p class="text-xs text-gray-500">Total</p><p id="stat-db-total" class="text-2xl font-bold">--</p></div>
+          <div class="bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-200 dark:border-gray-800"><p class="text-xs text-gray-500">Pagos</p><p id="stat-db-pagos" class="text-2xl font-bold text-emerald-600">--</p></div>
+          <div class="bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-200 dark:border-gray-800"><p class="text-xs text-gray-500">Pendentes</p><p id="stat-db-pendentes" class="text-2xl font-bold text-amber-600">--</p></div>
+          <div class="bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-200 dark:border-gray-800"><p class="text-xs text-gray-500">Com Playlist</p><p id="stat-db-playlist" class="text-2xl font-bold text-blue-600">--</p></div>
+        </div>
+        <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
+          <div id="dados-info-bar" class="px-4 py-3 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between"><div><h3 class="text-sm font-semibold">Recebimentos</h3><p id="dados-total-info" class="text-xs text-gray-400">--</p></div><span id="dados-pag-info" class="text-xs text-gray-400">--</span></div>
+          <div class="overflow-x-auto"><div id="dados-loading" class="p-6 text-center text-gray-400">Carregando dados...</div><table id="dados-table" class="hidden w-full text-sm"><thead class="bg-gray-50 dark:bg-gray-800/60"><tr class="text-left text-xs text-gray-500 uppercase"><th class="px-5 py-3">Contratante</th><th class="px-5 py-3">Código</th><th class="px-5 py-3">Vencimento</th><th class="px-5 py-3">Valor</th><th class="px-5 py-3">Status</th><th class="px-5 py-3">Pago Em</th><th class="px-5 py-3">Playlist</th><th class="px-5 py-3">Faixas</th><th class="px-5 py-3">Período</th></tr></thead><tbody id="dados-tbody"></tbody></table></div>
+          <div id="paginacao" class="flex items-center justify-between px-5 py-4 border-t border-gray-200 dark:border-gray-800"><span id="pag-info" class="text-xs text-gray-500">--</span><div class="flex items-center gap-2"><button id="btn-anterior" onclick="mudarPagina(-1)" class="px-3 py-1.5 text-xs border border-gray-200 dark:border-gray-700 rounded-lg">Anterior</button><span id="pag-paginas" class="text-sm">1 / 1</span><button id="btn-proximo" onclick="mudarPagina(1)" class="px-3 py-1.5 text-xs border border-gray-200 dark:border-gray-700 rounded-lg">Próxima</button></div></div>
+        </div>
+      </section>
+
+      <section id="section-settings" class="section-content hidden">
+        <div class="max-w-2xl mx-auto space-y-4">
+          <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
+            <h3 class="font-semibold mb-3">Conexão com GitHub</h3>
+            <input id="cfg-token" type="password" class="input-field mb-2" placeholder="PAT" />
+            <div class="grid grid-cols-2 gap-2 mb-2"><input id="cfg-owner" class="input-field" placeholder="usuário" /><input id="cfg-repo" class="input-field" placeholder="repositório" /></div>
+            <input id="cfg-years" class="input-field" placeholder="2024, 2025" />
+            <div class="flex gap-2 mt-3"><button onclick="saveSettings()" class="px-4 py-2 bg-blue-600 text-white rounded-lg">Salvar</button><button onclick="testConnection()" class="px-4 py-2 bg-gray-100 dark:bg-gray-800 rounded-lg">Testar</button><button onclick="clearSettings()" class="px-4 py-2 text-red-500">Limpar</button></div>
+          </div>
+          <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
+            <h3 class="font-semibold mb-3">Firebase & API</h3>
+            <input id="cfg-api-url" class="input-field" placeholder="https://meu-app.vercel.app" />
+            <div class="bg-gray-50 dark:bg-gray-800 rounded-xl p-3 mt-3"><p class="text-xs text-gray-500">Usuário autenticado</p><p id="cfg-user-email" class="text-sm font-medium">--</p></div>
+            <button onclick="testarAPI()" class="mt-3 px-4 py-2 text-sm text-blue-600 border border-blue-200 rounded-lg">Testar API</button>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="setup-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-white dark:bg-gray-900 rounded-3xl shadow-2xl max-w-md w-full p-8">
+      <div class="text-center mb-6">
+        <h2 class="text-xl font-bold">Bem-vindo!</h2>
+        <p class="text-sm text-gray-500">Informe os dados do repositório.</p>
+      </div>
+      <div class="space-y-3">
+        <input type="password" id="setup-token" class="input-field" placeholder="PAT" />
+        <input type="text" id="setup-owner" class="input-field" placeholder="usuário" />
+        <input type="text" id="setup-repo" class="input-field" placeholder="repositório" value="md_recebimentos_extractor" />
+        <button onclick="completeSetup()" class="w-full py-3 bg-blue-600 text-white rounded-xl">Começar →</button>
+        <button onclick="closeSetupModal()" class="w-full py-2 text-sm text-gray-400">Pular</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast-container" class="fixed bottom-6 right-6 flex flex-col gap-2 z-50 pointer-events-none"></div>
+  <script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,227 @@
+/* ============================================================
+   MD Recebimentos — Custom Styles
+   ============================================================ */
+
+/* ── Fonte base ── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* ── Scrollbar personalizada ── */
+::-webkit-scrollbar            { width: 6px; height: 6px; }
+::-webkit-scrollbar-track      { background: transparent; }
+::-webkit-scrollbar-thumb      { background: rgba(0,0,0,.15); border-radius: 3px; }
+.dark ::-webkit-scrollbar-thumb { background: rgba(255,255,255,.12); }
+
+/* ── Input field padrão ── */
+.input-field {
+    width: 100%;
+    padding: 0.625rem 1rem;
+    border-radius: 0.625rem;
+    border: 1px solid #d1d5db;
+    background: #fff;
+    color: #111827;
+    font-size: 0.875rem;
+    outline: none;
+    transition: box-shadow .15s, border-color .15s;
+}
+.input-field:focus {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59,130,246,.15);
+}
+.dark .input-field {
+    border-color: #374151;
+    background: #1f2937;
+    color: #f3f4f6;
+}
+.dark .input-field:focus {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59,130,246,.2);
+}
+.input-field::placeholder { color: #9ca3af; }
+.dark .input-field::placeholder { color: #6b7280; }
+
+/* ── Nav items (sidebar) ── */
+.nav-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 12px;
+    border-radius: 10px;
+    color: rgba(255,255,255,.65);
+    font-size: 0.875rem;
+    font-weight: 500;
+    text-decoration: none;
+    transition: background .15s, color .15s;
+    user-select: none;
+}
+.nav-item:hover {
+    color: #fff;
+    background: rgba(255,255,255,.1);
+}
+.nav-item.active {
+    color: #fff;
+    background: rgba(255,255,255,.16);
+}
+
+/* ── Stat cards ── */
+.stat-card {
+    transition: transform .2s ease, box-shadow .2s ease;
+}
+.stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0,0,0,.08);
+}
+.dark .stat-card:hover {
+    box-shadow: 0 8px 24px rgba(0,0,0,.35);
+}
+
+/* ── Badges de status ── */
+.badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 9px;
+    border-radius: 9999px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .03em;
+    white-space: nowrap;
+}
+
+/* success */
+.badge-success      { background:#dcfce7; color:#166534; }
+.dark .badge-success { background:rgba(22,163,74,.2); color:#86efac; }
+
+/* failure / error */
+.badge-failure,
+.badge-error        { background:#fee2e2; color:#991b1b; }
+.dark .badge-failure,
+.dark .badge-error  { background:rgba(220,38,38,.2); color:#fca5a5; }
+
+/* in_progress */
+.badge-in_progress       { background:#dbeafe; color:#1d4ed8; }
+.dark .badge-in_progress { background:rgba(59,130,246,.2); color:#93c5fd; }
+
+/* cancelled */
+.badge-cancelled       { background:#f3f4f6; color:#4b5563; }
+.dark .badge-cancelled { background:rgba(107,114,128,.2); color:#d1d5db; }
+
+/* queued / waiting */
+.badge-queued,
+.badge-waiting        { background:#fef9c3; color:#854d0e; }
+.dark .badge-queued,
+.dark .badge-waiting  { background:rgba(234,179,8,.2); color:#fde047; }
+
+/* skipped / neutral */
+.badge-skipped,
+.badge-neutral        { background:#f3f4f6; color:#6b7280; }
+.dark .badge-skipped,
+.dark .badge-neutral  { background:rgba(107,114,128,.2); color:#9ca3af; }
+
+/* ── Spinner ── */
+.spinner {
+    display: inline-block;
+    width: 18px;
+    height: 18px;
+    border: 2px solid rgba(255,255,255,.35);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.spinning { animation: spin .8s linear infinite; }
+
+/* ── Toast ── */
+.toast {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    border-radius: 12px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #fff;
+    box-shadow: 0 4px 16px rgba(0,0,0,.18);
+    min-width: 220px;
+    max-width: 360px;
+    pointer-events: auto;
+    animation: slideIn .3s ease;
+}
+.toast-success { background: #059669; }
+.toast-error   { background: #dc2626; }
+.toast-info    { background: #2563eb; }
+.toast-warning { background: #d97706; }
+
+@keyframes slideIn {
+    from { transform: translateX(120%); opacity: 0; }
+    to   { transform: translateX(0);     opacity: 1; }
+}
+@keyframes slideOut {
+    from { transform: translateX(0);     opacity: 1; }
+    to   { transform: translateX(120%);  opacity: 0; }
+}
+.toast-exit { animation: slideOut .3s ease forwards; }
+
+/* ── Year checkboxes ── */
+.year-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 14px;
+    border-radius: 10px;
+    border: 2px solid #e5e7eb;
+    background: #fff;
+    cursor: pointer;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #374151;
+    transition: all .15s ease;
+    user-select: none;
+}
+.year-tag:hover { border-color: #93c5fd; }
+.year-tag.selected {
+    background: #eff6ff;
+    border-color: #3b82f6;
+    color: #1d4ed8;
+}
+.year-tag input[type="checkbox"] {
+    accent-color: #3b82f6;
+    width: 14px;
+    height: 14px;
+    cursor: pointer;
+}
+.dark .year-tag {
+    border-color: #374151;
+    background: #1f2937;
+    color: #d1d5db;
+}
+.dark .year-tag:hover { border-color: #3b82f6; }
+.dark .year-tag.selected {
+    background: rgba(59,130,246,.15);
+    border-color: #3b82f6;
+    color: #93c5fd;
+}
+
+/* ── Hover nas linhas de tabela ── */
+tbody tr:hover { background: rgba(0,0,0,.025); }
+.dark tbody tr:hover { background: rgba(255,255,255,.03); }
+
+/* ── Transição suave de seções ── */
+.section-content {
+    animation: fadeIn .2s ease;
+}
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0);   }
+}
+
+/* ── Overflow break para células de tabela ── */
+td { max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
