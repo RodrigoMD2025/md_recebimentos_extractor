@@ -324,20 +324,28 @@ async def salvar_no_neon(df, execucao_id):
         """
 
         for i, (_, row) in enumerate(df.iterrows()):
+            
+            # Helper para evitar que NaN do Pandas seja passado para o PostgreSQL
+            def safe_val(key, default=""):
+                val = row.get(key)
+                if pd.isna(val):
+                    return None if default is None else default
+                return str(val)
+
             result = await conn.fetchrow(
                 sql,
                 ANO_RELATORIO,
-                str(row.get("Contratante") or ""),
-                str(row.get("Código de Contrato") or ""),
-                str(row.get("Vencimento") or ""),
-                str(row.get("Valor Parcela") or ""),
-                str(row.get("Status") or ""),
-                str(row.get("Pago Em") or ""),
-                row.get("Link Detalhes"),  # is None when missing
-                str(row.get("Status Playlist") or ""),
-                str(row.get("Playlists") or ""),
-                str(row.get("Período") or ""),
-                str(row.get("Faixas") or ""),
+                safe_val("Contratante"),
+                safe_val("Código de Contrato"),
+                safe_val("Vencimento"),
+                safe_val("Valor Parcela"),
+                safe_val("Status"),
+                safe_val("Pago Em"),
+                safe_val("Link Detalhes", default=None),  # NULL quando ausente
+                safe_val("Status Playlist"),
+                safe_val("Playlists"),
+                safe_val("Período"),
+                safe_val("Faixas"),
                 execucao_id,
             )
 
