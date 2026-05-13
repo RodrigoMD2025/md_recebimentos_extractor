@@ -5,14 +5,14 @@
 
 "use strict";
 
+const GH_API = "https://api.github.com";
 const WORKFLOW_ID = "recebimentos.yml";
 const STORE_KEY = "md_rcb_config";
 
 let cfg = {
-  owner: "RodrigoMD2025",
+  token: "",
+  owner: "",
   repo: "md_recebimentos_extractor",
-  workflowId: WORKFLOW_ID,
-  hasGithubToken: false,
   years: ["2024", "2025"],
   theme: "light",
   apiUrl: "",
@@ -33,7 +33,6 @@ let dadosTotal = 0;
 let dadosTotalPags = 1;
 let debounceTimer = null;
 let dadosInicializado = false;
-let progressMonitorInterval = null;
 
 Auth.init(function (user) {
   appUser = user;
@@ -41,14 +40,19 @@ Auth.init(function (user) {
   init();
 });
 
-async function init() {
+function init() {
   loadConfig();
   applyTheme(cfg.theme);
   initNav();
   buildYearTags();
   bindFiltroEvents();
-  await loadGithubConfig();
-  await loadRuns();
+
+  if (cfg.token && cfg.owner) {
+    loadRuns();
+  } else {
+    showSetupModal();
+  }
+
   carregarStats();
 }
 
@@ -80,36 +84,19 @@ function setUserUI(user) {
 function loadConfig() {
   try {
     const raw = localStorage.getItem(STORE_KEY);
-    if (raw) {
-      const saved = JSON.parse(raw);
-      cfg = {
-        ...cfg,
-        years: saved.years || cfg.years,
-        theme: saved.theme || cfg.theme,
-        apiUrl: saved.apiUrl || "",
-      };
-    }
+    if (raw) cfg = { ...cfg, ...JSON.parse(raw) };
   } catch (_) {}
-
-  const savedTheme = localStorage.getItem("theme");
-  if (savedTheme === "dark" || savedTheme === "light") {
-    cfg.theme = savedTheme;
-  }
-
   syncFormFields();
 }
 
 function persistConfig() {
-  const payload = {
-    years: cfg.years,
-    theme: cfg.theme,
-    apiUrl: cfg.apiUrl,
-  };
-  localStorage.setItem(STORE_KEY, JSON.stringify(payload));
-  localStorage.setItem("theme", cfg.theme);
+  localStorage.setItem(STORE_KEY, JSON.stringify(cfg));
 }
 
 function syncFormFields() {
+  setVal("cfg-token", cfg.token);
+  setVal("cfg-owner", cfg.owner);
+  setVal("cfg-repo", cfg.repo);
   setVal("cfg-years", (cfg.years || []).join(", "));
   setVal("cfg-api-url", cfg.apiUrl || "");
 }
@@ -131,45 +118,6 @@ function applyTheme(t) {
   if (iconSun && iconMoon) {
     iconSun.classList.toggle("hidden", t !== "dark");
     iconMoon.classList.toggle("hidden", t === "dark");
-  }
-}
-
-async function loadGithubConfig() {
-  try {
-    const data = await githubApiFetch("/api/github-config");
-    cfg.owner = data.owner || cfg.owner;
-    cfg.repo = data.repo || cfg.repo;
-    cfg.workflowId = data.workflowId || cfg.workflowId || WORKFLOW_ID;
-    cfg.hasGithubToken = Boolean(data.hasToken);
-    setGithubConfigUI();
-  } catch (err) {
-    setGithubConfigUI(err.message);
-    toast(`Erro ao carregar configuracao do GitHub: ${err.message}`, "error");
-  }
-}
-
-function setGithubConfigUI(errorMessage = "") {
-  const repoName = document.getElementById("github-repo-name");
-  const repoDetails = document.getElementById("github-repo-details");
-  const tokenBadge = document.getElementById("github-token-badge");
-
-  if (repoName) {
-    repoName.textContent = `${cfg.owner}/${cfg.repo}`;
-  }
-
-  if (repoDetails) {
-    repoDetails.textContent = errorMessage
-      ? `Falha ao carregar configuracao: ${errorMessage}`
-      : `Workflow ${cfg.workflowId || WORKFLOW_ID}`;
-  }
-
-  if (tokenBadge) {
-    tokenBadge.textContent = cfg.hasGithubToken
-      ? "Token configurado"
-      : "Somente leitura";
-    tokenBadge.className = cfg.hasGithubToken
-      ? "text-[11px] px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"
-      : "text-[11px] px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300";
   }
 }
 
@@ -266,40 +214,40 @@ function bindFiltroEvents() {
   }
 }
 
-async function githubApiFetch(path, options = {}) {
-  const headers = await Auth.headers();
-  const response = await fetch(buildApiUrl(path, options.params), {
-    method: options.method || "GET",
-    headers,
-    body: options.body ? JSON.stringify(options.body) : undefined,
+function ghHeaders() {
+  return {
+    Authorization: `Bearer ${cfg.token}`,
+    Accept: "application/vnd.github.v3+json",
+    "Content-Type": "application/json",
+  };
+}
+
+async function ghFetch(path, opts = {}) {
+  const res = await fetch(`${GH_API}${path}`, {
+    ...opts,
+    headers: ghHeaders(),
   });
-
-  if (response.status === 204) {
-    return null;
+  if (res.status === 204) return null;
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.message || `HTTP ${res.status}`);
   }
-
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(payload.error || `HTTP ${response.status}`);
-  }
-
-  return payload;
+  return res.json();
 }
 
 async function loadRuns(forHistory = false) {
+  if (!cfg.token || !cfg.owner) {
+    setStatus("none");
+    return;
+  }
+
   spinRefresh(true);
   setStatus("loading", "Conectando…");
 
   try {
-    // Passa with_inputs=true para enriquecer as runs com os anos processados
-    const data = await githubApiFetch("/api/github-runs", {
-      params: { per_page: 50, page: 1, with_inputs: "true" },
-    });
-    cfg.owner = data.owner || cfg.owner;
-    cfg.repo = data.repo || cfg.repo;
-    cfg.workflowId = data.workflowId || cfg.workflowId;
-    cfg.hasGithubToken = Boolean(data.hasToken);
-    setGithubConfigUI();
+    const data = await ghFetch(
+      `/repos/${cfg.owner}/${cfg.repo}/actions/runs?per_page=50`,
+    );
     allRuns = data?.workflow_runs ?? [];
 
     updateStats(allRuns);
@@ -518,32 +466,10 @@ function fillTable(runs, tbodyId, tableId, placeholderId, withTrigger) {
         ? `<td class="px-5 py-3.5 text-gray-500">${triggerLabel(run.event)}</td>`
         : "";
 
-      // Extrair anos dos inputs da execução
-      // run.inputs vem do enrichment feito pela API (with_inputs=true)
-      let years = "—";
-      if (run.inputs?.anos) {
-        years = String(run.inputs.anos).split(",").map(y => y.trim()).join(", ");
-      } else if (run.event === "schedule") {
-        years = "Agendado";
-      } else if (run.event === "push") {
-        years = "Auto";
-      }
-      const yearsCell = tbodyId === "dash-tbody"
-        ? `<td class="px-5 py-3.5">
-            <span class="inline-flex gap-1 flex-wrap">
-              ${years !== "—" && years !== "Agendado" && years !== "Auto"
-                ? years.split(", ").map(y => `<span class="text-[11px] font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300">${esc(y)}</span>`).join("")
-                : `<span class="text-xs text-gray-400">${esc(years)}</span>`
-              }
-            </span>
-          </td>`
-        : "";
-
       return `
         <tr>
           <td class="px-5 py-3.5">#${run.run_number}</td>
           <td class="px-5 py-3.5">${title}</td>
-          ${yearsCell}
           ${triggerCell}
           <td class="px-5 py-3.5">${badge}</td>
           <td class="px-5 py-3.5 text-gray-500 text-xs">${dateStr}</td>
@@ -582,14 +508,13 @@ function applyFilter() {
 }
 
 async function triggerWorkflow() {
+  if (!cfg.token || !cfg.owner) {
+    showSetupModal();
+    return;
+  }
+
   const chatId = document.getElementById("run-chat-id")?.value?.trim() || "";
   const branch = document.getElementById("run-branch")?.value || "main";
-
-  // Obter anos selecionados
-  const selectedYears = [];
-  document.querySelectorAll("#year-checkboxes input:checked").forEach((cb) => {
-    selectedYears.push(cb.value);
-  });
 
   const btn = document.getElementById("run-btn");
   if (btn) btn.disabled = true;
@@ -597,16 +522,17 @@ async function triggerWorkflow() {
   try {
     const body = { ref: branch, inputs: {} };
     if (chatId) body.inputs.chat_id = chatId;
-    if (selectedYears.length > 0) body.inputs.anos = selectedYears.join(",");
 
-    await githubApiFetch("/api/github-dispatch", {
-      method: "POST",
-      body,
-    });
+    await ghFetch(
+      `/repos/${cfg.owner}/${cfg.repo}/actions/workflows/${WORKFLOW_ID}/dispatches`,
+      {
+        method: "POST",
+        body: JSON.stringify(body),
+      },
+    );
 
     toast("Workflow iniciado com sucesso! 🚀", "success");
     document.getElementById("active-monitor")?.classList.remove("hidden");
-    startProgressMonitor(selectedYears.length);
     setTimeout(() => loadRuns(), 4000);
   } catch (err) {
     toast(`Erro ao iniciar workflow: ${err.message}`, "error");
@@ -616,6 +542,9 @@ async function triggerWorkflow() {
 }
 
 function saveSettings() {
+  cfg.token = getVal("cfg-token").trim();
+  cfg.owner = getVal("cfg-owner").trim();
+  cfg.repo = getVal("cfg-repo").trim() || "md_recebimentos_extractor";
   cfg.apiUrl = getVal("cfg-api-url").trim();
 
   const raw = getVal("cfg-years");
@@ -632,122 +561,72 @@ function saveSettings() {
 }
 
 async function testConnection() {
+  const token = getVal("cfg-token").trim();
+  const owner = getVal("cfg-owner").trim();
+  const repo = getVal("cfg-repo").trim() || "md_recebimentos_extractor";
+  if (!token || !owner) {
+    toast("Preencha token e usuário", "warning");
+    return;
+  }
+
   try {
-    const data = await githubApiFetch("/api/github-runs", {
-      params: { per_page: 1, page: 1 },
+    const res = await fetch(`${GH_API}/repos/${owner}/${repo}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github.v3+json",
+      },
     });
-    cfg.owner = data.owner || cfg.owner;
-    cfg.repo = data.repo || cfg.repo;
-    cfg.hasGithubToken = Boolean(data.hasToken);
-    setGithubConfigUI();
-    toast(`GitHub conectado: ${cfg.owner}/${cfg.repo}`, "success");
-  } catch (err) {
-    toast(`Erro ao verificar GitHub: ${err.message}`, "error");
+    if (res.ok) {
+      const d = await res.json();
+      toast(`✅ Repositório encontrado: ${d.full_name}`, "success");
+    } else {
+      toast("❌ Repositório não encontrado ou token inválido", "error");
+    }
+  } catch (e) {
+    toast(`❌ Erro: ${e.message}`, "error");
   }
 }
 
 function clearSettings() {
-  if (!confirm("Limpar preferencias salvas da interface?")) return;
+  if (!confirm("Limpar todas as configurações salvas?")) return;
   localStorage.removeItem(STORE_KEY);
-  localStorage.removeItem("theme");
   cfg = {
-    owner: "RodrigoMD2025",
+    token: "",
+    owner: "",
     repo: "md_recebimentos_extractor",
-    workflowId: WORKFLOW_ID,
-    hasGithubToken: false,
     years: ["2024", "2025"],
     theme: "light",
     apiUrl: "",
   };
-  applyTheme(cfg.theme);
   syncFormFields();
   buildYearTags();
-  setGithubConfigUI();
-  toast("Preferencias da interface limpas", "info");
+  toast("Configurações limpas", "info");
 }
 
-function startProgressMonitor(totalJobs) {
-  if (progressMonitorInterval) {
-    clearInterval(progressMonitorInterval);
-  }
-
-  const monitorEl = document.getElementById("active-monitor");
-  if (!monitorEl) return;
-
-  let completedJobs = 0;
-  let startTime = Date.now();
-
-  monitorEl.innerHTML = `
-    <div class="space-y-3">
-      <div class="flex items-center justify-between text-sm">
-        <span>Execução em andamento...</span>
-        <span id="progress-text">0/${totalJobs} anos concluídos</span>
-      </div>
-      <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
-        <div id="progress-bar" class="bg-blue-600 h-2.5 rounded-full transition-all duration-500" style="width: 0%"></div>
-      </div>
-      <div id="progress-eta" class="text-xs text-gray-500">Estimando tempo...</div>
-    </div>
-  `;
-
-  progressMonitorInterval = setInterval(async () => {
-    try {
-      // Sem with_inputs para manter o polling rápido durante monitoramento
-      const data = await githubApiFetch("/api/github-runs", {
-        params: { per_page: 1, page: 1 },
-      });
-      const latestRun = data?.workflow_runs?.[0];
-
-      if (latestRun) {
-        const status = latestRun.conclusion || latestRun.status;
-        if (status === "success" || status === "failure" || status === "cancelled") {
-          completedJobs = totalJobs;
-          updateProgress(completedJobs, totalJobs, startTime);
-          clearInterval(progressMonitorInterval);
-          setTimeout(() => {
-            monitorEl.classList.add("hidden");
-            loadRuns();
-          }, 2000);
-          return;
-        }
-
-        // Estimar progresso baseado no tempo decorrido
-        const elapsed = (Date.now() - startTime) / 1000;
-        const estimatedTotal = totalJobs * 180; // Estimativa de 3 minutos por ano
-        const estimatedProgress = Math.min(100, (elapsed / estimatedTotal) * 100);
-        updateProgress(estimatedProgress, totalJobs, startTime, elapsed);
-      }
-    } catch (err) {
-      console.error("Erro ao monitorar progresso:", err);
-    }
-  }, 3000);
+function showSetupModal() {
+  document.getElementById("setup-modal")?.classList.remove("hidden");
 }
 
-function updateProgress(progress, total, startTime, elapsed) {
-  const progressBar = document.getElementById("progress-bar");
-  const progressText = document.getElementById("progress-text");
-  const progressEta = document.getElementById("progress-eta");
+function closeSetupModal() {
+  document.getElementById("setup-modal")?.classList.add("hidden");
+}
 
-  if (progressBar) {
-    const percentage = typeof progress === "number" ? progress : (progress / total) * 100;
-    progressBar.style.width = `${percentage}%`;
+function completeSetup() {
+  const token = getVal("setup-token").trim();
+  const owner = getVal("setup-owner").trim();
+  const repo = getVal("setup-repo").trim() || "md_recebimentos_extractor";
+  if (!token || !owner) {
+    toast("Preencha token e usuário", "warning");
+    return;
   }
-
-  if (progressText) {
-    if (typeof progress === "number") {
-      progressText.textContent = `${Math.round(progress)}% concluído`;
-    } else {
-      progressText.textContent = `${progress}/${total} anos concluídos`;
-    }
-  }
-
-  if (progressEta && elapsed) {
-    const estimatedTotal = total * 180;
-    const remaining = Math.max(0, estimatedTotal - elapsed);
-    const minutes = Math.floor(remaining / 60);
-    const seconds = Math.floor(remaining % 60);
-    progressEta.textContent = `Tempo estimado restante: ${minutes}m ${seconds}s`;
-  }
+  cfg.token = token;
+  cfg.owner = owner;
+  cfg.repo = repo;
+  persistConfig();
+  closeSetupModal();
+  syncFormFields();
+  toast("Configuração salva!", "success");
+  loadRuns();
 }
 
 function setStatus(type, text = "") {

@@ -4,9 +4,14 @@ on:
   workflow_dispatch:
     inputs:
       chat_id:
-        description: 'Chat ID do Telegram (opcional - usa padrão se vazio)'
+        description: "Chat ID do Telegram (opcional - usa padrão se vazio)"
         required: false
-        default: ''
+        default: ""
+        type: string
+      anos:
+        description: "Anos para processar (separados por vírgula, ex: 2024,2025)"
+        required: false
+        default: "2024,2025"
         type: string
 
   repository_dispatch:
@@ -19,72 +24,72 @@ jobs:
 
     strategy:
       matrix:
-        ano: ["2024"]
+        ano: ${{ fromJson(format('[{0}]', inputs.anos || '2024,2025')) }}
 
     steps:
-    - name: Checkout do código
-      uses: actions/checkout@v4
+      - name: Checkout do código
+        uses: actions/checkout@v4
 
-    - name: Setup Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
-        cache: 'pip'
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+          cache: "pip"
 
-    - name: Instalar dependências do sistema
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y \
-          libnss3-dev \
-          libatk-bridge2.0-dev \
-          libdrm2 \
-          libxss1 \
-          libxrandr2 \
-          libasound2-dev \
-          libpangocairo-1.0-0 \
-          libgtk-3-dev
+      - name: Instalar dependências do sistema
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libnss3-dev \
+            libatk-bridge2.0-dev \
+            libdrm2 \
+            libxss1 \
+            libxrandr2 \
+            libasound2-dev \
+            libpangocairo-1.0-0 \
+            libgtk-3-dev
 
-    - name: Instalar dependências Python
-      run: |
-        pip install --upgrade pip
-        pip install pandas playwright beautifulsoup4 tqdm aiohttp aiofiles openpyxl
-        playwright install chromium
+      - name: Instalar dependências Python
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          playwright install chromium
 
-    - name: Definir Chat ID
-      id: chat-setup
-      run: |
-        if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.chat_id }}" ]; then
-          echo "CHAT_ID=${{ github.event.inputs.chat_id }}" >> $GITHUB_ENV
-          echo "Chat ID definido via input: ${{ github.event.inputs.chat_id }}"
-        elif [ "${{ github.event_name }}" = "repository_dispatch" ] && [ -n "${{ github.event.client_payload.chat_id }}" ]; then
-          echo "CHAT_ID=${{ github.event.client_payload.chat_id }}" >> $GITHUB_ENV
-          echo "Chat ID definido via payload: ${{ github.event.client_payload.chat_id }}"
-        else
-          echo "CHAT_ID=${{ secrets.DEFAULT_CHAT_ID }}" >> $GITHUB_ENV
-          echo "Usando Chat ID padrão dos secrets"
-        fi
+      - name: Definir Chat ID
+        id: chat-setup
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.chat_id }}" ]; then
+            echo "CHAT_ID=${{ github.event.inputs.chat_id }}" >> $GITHUB_ENV
+            echo "Chat ID definido via input: ${{ github.event.inputs.chat_id }}"
+          elif [ "${{ github.event_name }}" = "repository_dispatch" ] && [ -n "${{ github.event.client_payload.chat_id }}" ]; then
+            echo "CHAT_ID=${{ github.event.client_payload.chat_id }}" >> $GITHUB_ENV
+            echo "Chat ID definido via payload: ${{ github.event.client_payload.chat_id }}"
+          else
+            echo "CHAT_ID=${{ secrets.DEFAULT_CHAT_ID }}" >> $GITHUB_ENV
+            echo "Usando Chat ID padrão dos secrets"
+          fi
 
-    - name: Executar extração para ano ${{ matrix.ano }}
-      env:
-        BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-        CLIENT_EMAIL: ${{ secrets.CLIENT_EMAIL }}
-        CLIENT_SENHA: ${{ secrets.CLIENT_SENHA }}
-        DEFAULT_CHAT_ID: ${{ secrets.DEFAULT_CHAT_ID }}
-      run: |
-        python client_recebimentos.py --ano ${{ matrix.ano }}
+      - name: Executar extração para ano ${{ matrix.ano }}
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CLIENT_EMAIL: ${{ secrets.CLIENT_EMAIL }}
+          CLIENT_SENHA: ${{ secrets.CLIENT_SENHA }}
+          DEFAULT_CHAT_ID: ${{ secrets.DEFAULT_CHAT_ID }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python client_recebimentos.py --ano ${{ matrix.ano }}
 
-    - name: Upload de logs em caso de erro
-      if: failure()
-      uses: actions/upload-artifact@v4
-      with:
-        name: logs-recebimentos-${{ matrix.ano }}-${{ github.run_number }}
-        path: |
-          log_recebimentos.log
-          *.xlsx
-        retention-days: 7
+      - name: Upload de logs em caso de erro
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-recebimentos-${{ matrix.ano }}-${{ github.run_number }}
+          path: |
+            log_recebimentos.log
+          retention-days: 7
 
-    - name: Limpeza de arquivos temporários
-      if: always()
-      run: |
-        rm -f *.xlsx *.log
-        echo "Arquivos temporários removidos"
+      - name: Limpeza de arquivos temporários
+        if: always()
+        run: |
+          rm -f *.log
+          echo "Arquivos temporários removidos"

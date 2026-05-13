@@ -47,21 +47,6 @@ body {
 .dark .input-field::placeholder { color: #6b7280; }
 
 /* ── Nav items (sidebar) ── */
-.sidebar-brand-icon {
-    width: 42px;
-    height: 42px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 14px;
-    background: linear-gradient(135deg, rgba(96,165,250,.32), rgba(129,140,248,.18));
-    color: #fff;
-    box-shadow: 0 12px 30px rgba(37,99,235,.22);
-}
-.sidebar-brand-icon svg {
-    width: 22px;
-    height: 22px;
-}
 .nav-item {
     display: flex;
     align-items: center;
@@ -72,72 +57,16 @@ body {
     font-size: 0.875rem;
     font-weight: 500;
     text-decoration: none;
-    transition: background .15s, color .15s, transform .15s;
+    transition: background .15s, color .15s;
     user-select: none;
-}
-.nav-item-icon {
-    width: 18px;
-    height: 18px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    color: rgba(191,219,254,.9);
-    flex-shrink: 0;
-}
-.nav-item-icon svg {
-    width: 18px;
-    height: 18px;
-}
-.nav-item-label {
-    flex: 1;
 }
 .nav-item:hover {
     color: #fff;
     background: rgba(255,255,255,.1);
-    transform: translateX(2px);
 }
 .nav-item.active {
     color: #fff;
-    background: linear-gradient(90deg, rgba(59,130,246,.26), rgba(99,102,241,.16));
-    box-shadow: inset 0 0 0 1px rgba(191,219,254,.18);
-}
-
-/* ── Header action buttons ── */
-.icon-action-btn,
-.theme-toggle-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    border-radius: 12px;
-    color: #6b7280;
-    transition: background .15s, color .15s, transform .15s, box-shadow .15s;
-}
-.icon-action-btn:hover,
-.theme-toggle-btn:hover {
-    background: rgba(15,23,42,.06);
-    color: #111827;
-    transform: translateY(-1px);
-}
-.dark .icon-action-btn,
-.dark .theme-toggle-btn {
-    color: #9ca3af;
-}
-.dark .icon-action-btn:hover,
-.dark .theme-toggle-btn:hover {
-    background: rgba(255,255,255,.08);
-    color: #f8fafc;
-}
-.theme-toggle-btn {
-    border: 1px solid rgba(148,163,184,.22);
-    background: rgba(255,255,255,.82);
-    box-shadow: 0 8px 24px rgba(15,23,42,.08);
-}
-.dark .theme-toggle-btn {
-    border-color: rgba(71,85,105,.6);
-    background: rgba(15,23,42,.7);
-    box-shadow: 0 10px 24px rgba(2,6,23,.28);
+    background: rgba(255,255,255,.16);
 }
 
 /* ── Stat cards ── */

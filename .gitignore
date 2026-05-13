@@ -1,0 +1,26 @@
+# environment — .env e variações ficam fora do Git; .env.example é o template versionado
+.env
+.env.*
+!.env.example
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# node
+node_modules/
+
+# vercel
+.vercel/
+
+# editor
+.vscode/
+.idea/
+
+# system
+.DS_Store
+.vercel
+.env*.local
+zed_chats/
