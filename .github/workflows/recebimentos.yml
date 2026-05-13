@@ -52,7 +52,7 @@ jobs:
       - name: Instalar dependências Python
         run: |
           pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r python_extractor/requirements.txt
           playwright install chromium
 
       - name: Definir Chat ID
@@ -77,7 +77,7 @@ jobs:
           DEFAULT_CHAT_ID: ${{ secrets.DEFAULT_CHAT_ID }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
-          python client_recebimentos.py --ano ${{ matrix.ano }}
+          cd python_extractor && python client_recebimentos.py --ano ${{ matrix.ano }}
 
       - name: Upload de logs em caso de erro
         if: failure()
@@ -85,7 +85,7 @@ jobs:
         with:
           name: logs-recebimentos-${{ matrix.ano }}-${{ github.run_number }}
           path: |
-            log_recebimentos.log
+            python_extractor/log_recebimentos.log
           retention-days: 7
 
       - name: Limpeza de arquivos temporários
