@@ -528,16 +528,14 @@ function fillTable(runs, tbodyId, tableId, placeholderId, withTrigger) {
       } else if (run.event === "push") {
         years = "Auto";
       }
-      const yearsCell = tbodyId === "dash-tbody"
-        ? `<td class="px-5 py-3.5">
+      const yearsCell = `<td class="px-5 py-3.5">
             <span class="inline-flex gap-1 flex-wrap">
               ${years !== "—" && years !== "Agendado" && years !== "Auto"
                 ? years.split(", ").map(y => `<span class="text-[11px] font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300">${esc(y)}</span>`).join("")
                 : `<span class="text-xs text-gray-400">${esc(years)}</span>`
               }
             </span>
-          </td>`
-        : "";
+          </td>`;
 
       return `
         <tr>
