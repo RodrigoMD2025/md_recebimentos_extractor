@@ -298,6 +298,9 @@ async def salvar_no_neon(df, execucao_id):
     inseridos = 0
     atualizados = 0
 
+    # Replace NaN/NaT with None so asyncpg handles NULLs correctly
+    df = df.where(pd.notnull(df), None)
+
     try:
         sql = """
             INSERT INTO recebimentos (
@@ -330,7 +333,7 @@ async def salvar_no_neon(df, execucao_id):
                 str(row.get("Valor Parcela") or ""),
                 str(row.get("Status") or ""),
                 str(row.get("Pago Em") or ""),
-                row.get("Link Detalhes") or None,  # NULL quando ausente
+                row.get("Link Detalhes"),  # is None when missing
                 str(row.get("Status Playlist") or ""),
                 str(row.get("Playlists") or ""),
                 str(row.get("Período") or ""),
