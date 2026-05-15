@@ -237,12 +237,29 @@ Para problemas ou sugestões:
 2. Consulte as mensagens de erro no Telegram
 3. Analise os artefatos salvos em caso de falha
 
-## 🆕 Latest Updates
+## 🆕 Atualizações Recentes
 
-- ✅ Updated the GitHub Actions history UI to display the selected year(s) per run in the "ANO" column.
-- ✅ Fixed dropdown option text color so the expanded year list renders in black.
-- ✅ Added improved GitHub run input extraction from workflow run details and job names.
-- ✅ Prepared the app for local Vercel build deployment via the `public` output folder.
+### v2.1 - Dashboard & History UI (Maio 2026)
+- ✅ **Interface de Histórico**: Dropdown para exibição de anos selecionados por execução
+- ✅ **Coluna "Anos"**: Adicionada à tabela de histórico do dashboard
+- ✅ **Estilo melhorado**: Cores de font corrigidas em opções de dropdown
+- ✅ **Compatibilidade Vercel**: App preparado para deploy local via pasta `public`
+
+### v2.0 - Multi-Year Support & Dashboard (Abril 2026)
+- ✅ **Suporte Multi-Ano**: Coluna YEAR adicionada ao dashboard
+- ✅ **Barra de Progresso**: Feedback visual durante processamento
+- ✅ **Suporte a Anos no Workflow**: GitHub Actions agora suporta múltiplos anos
+- ✅ **Estrutura Reorganizada**: Python extractor movido para `python_extractor/`
+- ✅ **Tratamento de NaN**: Handling robusto com `pd.isna()` antes de inserção no banco
+- ✅ **Configuração Firebase**: Atualizada no login
+- ✅ **Página de Login**: Integrada ao frontend público
+
+### v1.0 - Extração & Notificações (2025)
+- ✅ **Automação Completa**: Extração via browser automation (Playwright)
+- ✅ **Multi-Ano**: Processamento em paralelo de múltiplos anos
+- ✅ **Notificações Telegram**: Relatórios detalhados e arquivos Excel
+- ✅ **Sistema de Retry**: Tentativas automáticas com backoff
+- ✅ **Logs Estruturados**: Monitoramento detalhado de cada etapa
 
 ## 📄 Licença
 
@@ -250,4 +267,4 @@ Este projeto é de uso interno e contém informações proprietárias do sistema
 
 ---
 
-*Última atualização: Julho 2025*
+*Última atualização: Maio 2026*
