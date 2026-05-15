@@ -495,7 +495,7 @@ def obter_chat_id():
 async def main():
     """Função principal da automação."""
     inicio_execucao = datetime.now()
-    execucao_id = str(uuid.uuid4())[:8]
+    execucao_id = GITHUB_RUN_ID or str(uuid.uuid4())[:8]
     chat_id = obter_chat_id()
 
     logging.info(f"🔑 Execução ID: {execucao_id}")

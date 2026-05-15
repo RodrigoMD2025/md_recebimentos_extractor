@@ -7,6 +7,7 @@
 
 const WORKFLOW_ID = "recebimentos.yml";
 const STORE_KEY = "md_rcb_config";
+const STORE_KEY_LAST_EXECUCAO = "md_rcb_last_execucao_anos"; // Guarda anos da última execução
 
 let cfg = {
   owner: "RodrigoMD2025",
@@ -20,6 +21,7 @@ let cfg = {
 
 let appUser = null;
 let allRuns = [];
+let execucaoYearsMap = {};
 let donutChart = null;
 let barChart = null;
 let dadosPagAtual = 1;
@@ -65,6 +67,14 @@ function buildApiUrl(path, params) {
     if (v !== "" && v !== null && v !== undefined) url.searchParams.set(k, v);
   });
   return url.toString().replace(window.location.origin, "");
+}
+
+async function loadExecucaoYears(execucaoIds = []) {
+  if (!execucaoIds.length) return {};
+
+  // Não aplique os anos salvos no localStorage para todas as execuções.
+  // Isso evita que uma nova seleção de 2 anos replique a droplist em execuções antigas.
+  return {};
 }
 
 function setUserUI(user) {
@@ -313,12 +323,17 @@ async function loadRuns(forHistory = false) {
     );
 
     if (forHistory) {
+      execucaoYearsMap = await loadExecucaoYears(
+        allRuns.map((run) => String(run.run_number)).filter(Boolean),
+      );
+
       fillTable(
         allRuns,
         "history-tbody",
         "history-table",
         "history-placeholder",
         true,
+        execucaoYearsMap,
       );
       document.getElementById("load-more-wrap")?.classList.remove("hidden");
     }
@@ -479,7 +494,7 @@ function renderBar(runs) {
   });
 }
 
-function fillTable(runs, tbodyId, tableId, placeholderId, withTrigger) {
+function fillTable(runs, tbodyId, tableId, placeholderId, withTrigger, execucaoYearsMap = {}) {
   const tbody = document.getElementById(tbodyId);
   const table = document.getElementById(tableId);
   const holder = document.getElementById(placeholderId);
@@ -504,9 +519,12 @@ function fillTable(runs, tbodyId, tableId, placeholderId, withTrigger) {
       const dur = end ? fmtDuration(end - start) : "…";
       const state = run.conclusion || run.status;
       const badge = `<span class="badge badge-${state}">${statusEmoji(state)} ${statusLabel(state)}</span>`;
-      const title = esc(
-        run.display_title || run.head_commit?.message?.split("\n")[0] || "—",
-      );
+      
+      let displayTitle = run.display_title || run.name || run.head_commit?.message?.split("\n")[0] || "—";
+      const yearsFromTitleMatch = displayTitle.match(/Ano\(s\):\s*([\d,\s]+)/i);
+      displayTitle = displayTitle.split(/ - Ano\(s\):/i)[0].trim();
+      
+      const title = esc(displayTitle);
       const dateStr = start.toLocaleString("pt-BR", {
         day: "2-digit",
         month: "2-digit",
@@ -518,24 +536,55 @@ function fillTable(runs, tbodyId, tableId, placeholderId, withTrigger) {
         ? `<td class="px-5 py-3.5 text-gray-500">${triggerLabel(run.event)}</td>`
         : "";
 
-      // Extrair anos dos inputs da execução
-      // run.inputs vem do enrichment feito pela API (with_inputs=true)
-      let years = "—";
-      if (run.inputs?.anos) {
-        years = String(run.inputs.anos).split(",").map(y => y.trim()).join(", ");
-      } else if (run.event === "schedule") {
-        years = "Agendado";
-      } else if (run.event === "push") {
-        years = "Auto";
+      // Extrair anos dos inputs da execução ou do título, priorizando dados do banco
+      const execucaoId = String(run.run_number || "");
+      const dbYears = execucaoYearsMap[execucaoId] || [];
+      let yearsArr = [];
+      const runInputs = run.inputs || {};
+      const anosInput = runInputs.anos || runInputs.ano || (yearsFromTitleMatch ? yearsFromTitleMatch[1] : null);
+
+      if (dbYears.length > 0) {
+        yearsArr = dbYears;
+      } else if (anosInput) {
+        yearsArr = String(anosInput).split(",").map((y) => y.trim()).filter(Boolean);
       }
-      const yearsCell = `<td class="px-5 py-3.5">
-            <span class="inline-flex gap-1 flex-wrap">
-              ${years !== "—" && years !== "Agendado" && years !== "Auto"
-                ? years.split(", ").map(y => `<span class="text-[11px] font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300">${esc(y)}</span>`).join("")
-                : `<span class="text-xs text-gray-400">${esc(years)}</span>`
-              }
-            </span>
-          </td>`;
+
+      let yearsContent = "";
+      if (yearsArr.length > 1) {
+        // Mais de um ano: cria um select (droplist) conforme sugerido
+        yearsContent = `
+          <select style="color:#000 !important; background:#fff !important;" class="text-[11px] font-medium bg-blue-50 text-black dark:text-black border-none rounded-full px-2 py-0.5 focus:ring-0 cursor-pointer outline-none">
+            <option selected disabled style="color:#000 !important; background:#fff !important;">${yearsArr.length} Anos...</option>
+            ${yearsArr.map(y => `<option style="color:#000 !important; background:#fff !important;">${y}</option>`).join("")}
+          </select>
+        `;
+      } else if (yearsArr.length === 1) {
+        // Apenas um ano: badge simples
+        yearsContent = `<span class="text-[11px] font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">${esc(yearsArr[0])}</span>`;
+      } else {
+        // Fallback para Agendado/Auto/Vazio
+        let fallback = "—";
+        if (run.event === "schedule") fallback = "Agendado";
+        else if (run.event === "push") fallback = "Auto";
+        
+        yearsContent = `<span class="text-xs text-gray-400">${esc(fallback)}</span>`;
+      }
+
+      const yearsCell = `<td class="px-5 py-3.5" data-run="${run.run_number}">
+        <div class="flex items-center">
+          ${yearsContent}
+        </div>
+      </td>`;
+
+      // Debug visível no console
+      console.log(`[Table Render] Run #${run.run_number} | anosInput: ${anosInput} | Count: ${yearsArr.length}`);
+
+
+      const deleteBtn = `<button onclick="deleteRun('${run.id}', '${run.run_number}')" class="text-red-500 hover:text-red-700 ml-2" title="Excluir execução e dados">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+        </svg>
+      </button>`;
 
       return `
         <tr>
@@ -546,11 +595,42 @@ function fillTable(runs, tbodyId, tableId, placeholderId, withTrigger) {
           <td class="px-5 py-3.5">${badge}</td>
           <td class="px-5 py-3.5 text-gray-500 text-xs">${dateStr}</td>
           <td class="px-5 py-3.5 text-gray-500 text-xs">${dur}</td>
-          <td class="px-5 py-3.5"><a class="text-xs text-blue-600" href="${run.html_url}" target="_blank" rel="noopener">Abrir</a></td>
+          <td class="px-5 py-3.5">
+            <div class="flex items-center">
+              <a class="text-xs text-blue-600" href="${run.html_url}" target="_blank" rel="noopener">Abrir</a>
+              ${deleteBtn}
+            </div>
+          </td>
         </tr>
       `;
     })
     .join("");
+}
+
+async function deleteRun(runId, runNumber) {
+  if (!confirm(`Tem certeza que deseja excluir a execução #${runNumber} e TODOS os dados associados a ela no banco de dados?`)) {
+    return;
+  }
+
+  try {
+    toast(`Excluindo execução #${runNumber}...`, "info");
+    
+    // 1. Excluir dados no banco (usando runId como execucao_id)
+    await githubApiFetch(`/api/recebimentos?execucao_id=${runId}`, {
+      method: "DELETE"
+    });
+
+    // 2. Excluir run no GitHub
+    await githubApiFetch(`/api/github-runs?id=${runId}`, {
+      method: "DELETE"
+    });
+
+    toast(`Execução #${runNumber} excluída com sucesso`, "success");
+    loadRuns(true); // Recarregar histórico
+  } catch (err) {
+    console.error("Erro ao excluir execução:", err);
+    toast(`Erro ao excluir: ${err.message}`, "error");
+  }
 }
 
 function loadMoreRuns() {
@@ -560,6 +640,7 @@ function loadMoreRuns() {
     "history-table",
     "history-placeholder",
     true,
+    execucaoYearsMap,
   );
   document.getElementById("load-more-wrap")?.classList.add("hidden");
 }
@@ -576,12 +657,12 @@ function applyFilter() {
     "history-table",
     "history-placeholder",
     true,
+    execucaoYearsMap,
   );
 }
 
 async function triggerWorkflow() {
-  const chatId = document.getElementById("run-chat-id")?.value?.trim() || "";
-  const branch = document.getElementById("run-branch")?.value || "main";
+  const branch = "main"; // Default branch
 
   // Obter anos selecionados
   const selectedYears = [];
@@ -589,13 +670,17 @@ async function triggerWorkflow() {
     selectedYears.push(cb.value);
   });
 
+  if (selectedYears.length === 0) {
+    toast("Selecione pelo menos um ano para processar", "error");
+    return;
+  }
+
   const btn = document.getElementById("run-btn");
   if (btn) btn.disabled = true;
 
   try {
     const body = { ref: branch, inputs: {} };
-    if (chatId) body.inputs.chat_id = chatId;
-    if (selectedYears.length > 0) body.inputs.anos = selectedYears.join(",");
+    body.inputs.anos = selectedYears.join(",");
 
     await githubApiFetch("/api/github-dispatch", {
       method: "POST",
@@ -603,9 +688,16 @@ async function triggerWorkflow() {
     });
 
     toast("Workflow iniciado com sucesso! 🚀", "success");
+    
+    // Guardar quais anos foram executados para usá-los no histórico
+    localStorage.setItem(STORE_KEY_LAST_EXECUCAO, JSON.stringify({
+      anos: selectedYears,
+      timestamp: new Date().toISOString(),
+    }));
+    
     document.getElementById("active-monitor")?.classList.remove("hidden");
     startProgressMonitor(selectedYears.length);
-    setTimeout(() => loadRuns(), 4000);
+    setTimeout(() => loadRuns(true), 4000); // Recarregar histórico para mostrar a nova execução
   } catch (err) {
     toast(`Erro ao iniciar workflow: ${err.message}`, "error");
   } finally {
@@ -682,7 +774,7 @@ function startProgressMonitor(totalJobs) {
         <span id="progress-text">0/${totalJobs} anos concluídos</span>
       </div>
       <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
-        <div id="progress-bar" class="bg-blue-600 h-2.5 rounded-full transition-all duration-500" style="width: 0%"></div>
+        <div id="progress-bar" class="bg-lime-500 h-2.5 rounded-full transition-all duration-500" style="width: 0%"></div>
       </div>
       <div id="progress-eta" class="text-xs text-gray-500">Estimando tempo...</div>
     </div>

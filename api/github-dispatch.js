@@ -30,7 +30,9 @@ module.exports = async function handler(req, res) {
   try {
     ensureGithubToken();
     const config = getGithubConfig();
-    const body = await readJsonBody(req);
+    
+    // Vercel já faz o parse do body automaticamente
+    const body = req.body || await readJsonBody(req);
 
     await githubRequest(
       `/repos/${config.owner}/${config.repo}/actions/workflows/${config.workflowId}/dispatches`,

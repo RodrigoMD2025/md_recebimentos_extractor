@@ -42,11 +42,21 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  // 2. Só aceita GET
-  if (req.method !== "GET") {
-    res.status(405).json({ error: "Método não permitido. Use GET." });
+  // 2. Trata GET e DELETE
+  if (req.method === "GET") {
+    return handleGet(req, res);
+  } else if (req.method === "DELETE") {
+    return handleDelete(req, res);
+  } else {
+    res.status(405).json({ error: "Método não permitido." });
     return;
   }
+};
+
+/**
+ * Lógica do GET
+ */
+async function handleGet(req, res) {
 
   // 3. Verifica token Firebase
   try {
@@ -162,7 +172,39 @@ module.exports = async function handler(req, res) {
       detail: process.env.NODE_ENV !== "production" ? dbErr.message : undefined,
     });
   }
-};
+}
+
+/**
+ * Lógica do DELETE
+ */
+async function handleDelete(req, res) {
+  // 3. Verifica token Firebase
+  try {
+    await verifyToken(req);
+  } catch (authErr) {
+    res.status(authErr.statusCode || 401).json({ error: authErr.message });
+    return;
+  }
+
+  const { execucao_id } = req.query || parseQuery(req.url);
+
+  if (!execucao_id) {
+    return res.status(400).json({ error: "execucao_id é obrigatório para exclusão." });
+  }
+
+  try {
+    const sql = `DELETE FROM recebimentos WHERE execucao_id = $1`;
+    const result = await query(sql, [execucao_id]);
+
+    res.status(200).json({
+      message: `Sucesso ao excluir registros.`,
+      deletedCount: result.rowCount,
+    });
+  } catch (dbErr) {
+    console.error("[recebimentos] Erro ao excluir:", dbErr);
+    res.status(500).json({ error: "Erro interno ao excluir registros." });
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Utilitário: parse manual de query string (fallback quando req.query não

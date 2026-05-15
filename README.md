@@ -237,6 +237,13 @@ Para problemas ou sugestões:
 2. Consulte as mensagens de erro no Telegram
 3. Analise os artefatos salvos em caso de falha
 
+## 🆕 Latest Updates
+
+- ✅ Updated the GitHub Actions history UI to display the selected year(s) per run in the "ANO" column.
+- ✅ Fixed dropdown option text color so the expanded year list renders in black.
+- ✅ Added improved GitHub run input extraction from workflow run details and job names.
+- ✅ Prepared the app for local Vercel build deployment via the `public` output folder.
+
 ## 📄 Licença
 
 Este projeto é de uso interno e contém informações proprietárias do sistema MD.

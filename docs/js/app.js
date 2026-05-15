@@ -8,6 +8,7 @@
 const GH_API = "https://api.github.com";
 const WORKFLOW_ID = "recebimentos.yml";
 const STORE_KEY = "md_rcb_config";
+const STORE_KEY_LAST_EXECUCAO = "md_rcb_last_execucao_anos"; // Guarda anos da última execução
 
 let cfg = {
   token: "",
@@ -20,6 +21,7 @@ let cfg = {
 
 let appUser = null;
 let allRuns = [];
+let execucaoYearsMap = {};
 let donutChart = null;
 let barChart = null;
 let dadosPagAtual = 1;
@@ -69,6 +71,14 @@ function buildApiUrl(path, params) {
     if (v !== "" && v !== null && v !== undefined) url.searchParams.set(k, v);
   });
   return url.toString().replace(window.location.origin, "");
+}
+
+async function loadExecucaoYears(execucaoIds = []) {
+  if (!execucaoIds.length) return {};
+
+  // Não aplique os anos salvos no localStorage para todas as execuções.
+  // Isso evita que uma nova seleção de 2 anos replique a droplist em execuções antigas.
+  return {};
 }
 
 function setUserUI(user) {
@@ -261,12 +271,17 @@ async function loadRuns(forHistory = false) {
     );
 
     if (forHistory) {
+      execucaoYearsMap = await loadExecucaoYears(
+        allRuns.map((run) => String(run.run_number)).filter(Boolean),
+      );
+
       fillTable(
         allRuns,
         "history-tbody",
         "history-table",
         "history-placeholder",
         true,
+        execucaoYearsMap,
       );
       document.getElementById("load-more-wrap")?.classList.remove("hidden");
     }
@@ -427,7 +442,7 @@ function renderBar(runs) {
   });
 }
 
-function fillTable(runs, tbodyId, tableId, placeholderId, withTrigger) {
+function fillTable(runs, tbodyId, tableId, placeholderId, withTrigger, execucaoYearsMap = {}) {
   const tbody = document.getElementById(tbodyId);
   const table = document.getElementById(tableId);
   const holder = document.getElementById(placeholderId);
@@ -452,9 +467,10 @@ function fillTable(runs, tbodyId, tableId, placeholderId, withTrigger) {
       const dur = end ? fmtDuration(end - start) : "…";
       const state = run.conclusion || run.status;
       const badge = `<span class="badge badge-${state}">${statusEmoji(state)} ${statusLabel(state)}</span>`;
-      const title = esc(
-        run.display_title || run.head_commit?.message?.split("\n")[0] || "—",
-      );
+      let displayTitle = run.display_title || run.name || run.head_commit?.message?.split("\n")[0] || "—";
+      const yearsFromTitleMatch = displayTitle.match(/Ano\(s\):\s*([\d,\s]+)/i);
+      displayTitle = displayTitle.split(/ - Ano\(s\):/i)[0].trim();
+      const title = esc(displayTitle);
       const dateStr = start.toLocaleString("pt-BR", {
         day: "2-digit",
         month: "2-digit",
@@ -466,10 +482,45 @@ function fillTable(runs, tbodyId, tableId, placeholderId, withTrigger) {
         ? `<td class="px-5 py-3.5 text-gray-500">${triggerLabel(run.event)}</td>`
         : "";
 
+      const execucaoId = String(run.run_number || "");
+      const dbYears = execucaoYearsMap[execucaoId] || [];
+      let yearsArr = [];
+      const runInputs = run.inputs || {};
+      const anosInput = runInputs.anos || runInputs.ano || (yearsFromTitleMatch ? yearsFromTitleMatch[1] : null);
+      if (dbYears.length > 0) {
+        yearsArr = dbYears;
+      } else if (anosInput) {
+        yearsArr = String(anosInput).split(",").map((y) => y.trim()).filter(Boolean);
+      }
+
+      let yearsContent = "";
+      if (yearsArr.length > 1) {
+        yearsContent = `
+          <select style="color:#000 !important; background:#fff !important;" class="text-[11px] font-medium bg-blue-50 text-black dark:text-black border-none rounded-full px-2 py-0.5 focus:ring-0 cursor-pointer outline-none">
+            <option selected disabled style="color:#000 !important; background:#fff !important;">${yearsArr.length} Anos...</option>
+            ${yearsArr.map((y) => `<option style="color:#000 !important; background:#fff !important;">${y}</option>`).join("")}
+          </select>
+        `;
+      } else if (yearsArr.length === 1) {
+        yearsContent = `<span class="text-[11px] font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">${esc(yearsArr[0])}</span>`;
+      } else {
+        let fallback = "—";
+        if (run.event === "schedule") fallback = "Agendado";
+        else if (run.event === "push") fallback = "Auto";
+        yearsContent = `<span class="text-xs text-gray-400">${esc(fallback)}</span>`;
+      }
+
+      const yearsCell = `<td class="px-5 py-3.5" data-run="${run.run_number}">
+        <div class="flex items-center">
+          ${yearsContent}
+        </div>
+      </td>`;
+
       return `
         <tr>
           <td class="px-5 py-3.5">#${run.run_number}</td>
           <td class="px-5 py-3.5">${title}</td>
+          ${yearsCell}
           ${triggerCell}
           <td class="px-5 py-3.5">${badge}</td>
           <td class="px-5 py-3.5 text-gray-500 text-xs">${dateStr}</td>
@@ -488,6 +539,7 @@ function loadMoreRuns() {
     "history-table",
     "history-placeholder",
     true,
+    execucaoYearsMap,
   );
   document.getElementById("load-more-wrap")?.classList.add("hidden");
 }
@@ -504,6 +556,7 @@ function applyFilter() {
     "history-table",
     "history-placeholder",
     true,
+    execucaoYearsMap,
   );
 }
 
@@ -513,15 +566,25 @@ async function triggerWorkflow() {
     return;
   }
 
-  const chatId = document.getElementById("run-chat-id")?.value?.trim() || "";
   const branch = document.getElementById("run-branch")?.value || "main";
+
+  // Obter anos selecionados
+  const selectedYears = [];
+  document.querySelectorAll("#year-checkboxes input:checked").forEach((cb) => {
+    selectedYears.push(cb.value);
+  });
+
+  if (selectedYears.length === 0) {
+    toast("Selecione pelo menos um ano para processar", "error");
+    return;
+  }
 
   const btn = document.getElementById("run-btn");
   if (btn) btn.disabled = true;
 
   try {
     const body = { ref: branch, inputs: {} };
-    if (chatId) body.inputs.chat_id = chatId;
+    body.inputs.anos = selectedYears.join(",");
 
     await ghFetch(
       `/repos/${cfg.owner}/${cfg.repo}/actions/workflows/${WORKFLOW_ID}/dispatches`,
@@ -532,8 +595,15 @@ async function triggerWorkflow() {
     );
 
     toast("Workflow iniciado com sucesso! 🚀", "success");
+    
+    // Guardar quais anos foram executados para usá-los no histórico
+    localStorage.setItem(STORE_KEY_LAST_EXECUCAO, JSON.stringify({
+      anos: selectedYears,
+      timestamp: new Date().toISOString(),
+    }));
+    
     document.getElementById("active-monitor")?.classList.remove("hidden");
-    setTimeout(() => loadRuns(), 4000);
+    setTimeout(() => loadRuns(true), 4000); // Recarregar histórico para mostrar a nova execução
   } catch (err) {
     toast(`Erro ao iniciar workflow: ${err.message}`, "error");
   } finally {
