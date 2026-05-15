@@ -553,8 +553,8 @@ function fillTable(runs, tbodyId, tableId, placeholderId, withTrigger, execucaoY
       if (yearsArr.length > 1) {
         // Mais de um ano: cria um select (droplist) conforme sugerido
         yearsContent = `
-          <select style="color:#000 !important; background:#fff !important;" class="text-[11px] font-medium bg-blue-50 text-black dark:text-black border-none rounded-full px-2 py-0.5 focus:ring-0 cursor-pointer outline-none">
-            <option selected disabled style="color:#000 !important; background:#fff !important;">${yearsArr.length} Anos...</option>
+          <select class="text-[11px] font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border-none rounded-full px-2 py-0.5 focus:ring-0 cursor-pointer outline-none">
+            <option selected disabled>${yearsArr.length} Anos...</option>
             ${yearsArr.map(y => `<option style="color:#000 !important; background:#fff !important;">${y}</option>`).join("")}
           </select>
         `;
