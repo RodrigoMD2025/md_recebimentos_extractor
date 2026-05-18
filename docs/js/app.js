@@ -363,23 +363,23 @@ function renderDonut(runs) {
           data: [success, failure, cancelled, other],
           backgroundColor: ["#059669", "#dc2626", "#9ca3af", "#d97706"],
           borderWidth: 0,
-          hoverOffset: 6,
+          hoverOffset: 4,
         },
       ],
     },
     options: {
       responsive: true,
       maintainAspectRatio: true,
-      cutout: "68%",
+      cutout: "60%",
       plugins: {
         legend: {
           position: "bottom",
           labels: {
             font: { size: 11 },
             color: labelColor(),
-            padding: 14,
+            padding: 10,
             usePointStyle: true,
-            pointStyleWidth: 8,
+            pointStyleWidth: 7,
           },
         },
       },
@@ -422,7 +422,7 @@ function renderBar(runs) {
         {
           data: recent.map(() => 1),
           backgroundColor: colors,
-          borderRadius: 5,
+          borderRadius: 3,
           borderWidth: 0,
         },
       ],
@@ -479,7 +479,7 @@ function fillTable(runs, tbodyId, tableId, placeholderId, withTrigger, execucaoY
         minute: "2-digit",
       });
       const triggerCell = withTrigger
-        ? `<td class="px-5 py-3.5 text-gray-500">${triggerLabel(run.event)}</td>`
+        ? `<td class="px-4 py-2 text-gray-500">${triggerLabel(run.event)}</td>`
         : "";
 
       const execucaoId = String(run.run_number || "");
@@ -510,7 +510,7 @@ function fillTable(runs, tbodyId, tableId, placeholderId, withTrigger, execucaoY
         yearsContent = `<span class="text-xs text-gray-400">${esc(fallback)}</span>`;
       }
 
-      const yearsCell = `<td class="px-5 py-3.5" data-run="${run.run_number}">
+      const yearsCell = `<td class="px-4 py-2" data-run="${run.run_number}">
         <div class="flex items-center">
           ${yearsContent}
         </div>
@@ -518,14 +518,14 @@ function fillTable(runs, tbodyId, tableId, placeholderId, withTrigger, execucaoY
 
       return `
         <tr>
-          <td class="px-5 py-3.5">#${run.run_number}</td>
-          <td class="px-5 py-3.5">${title}</td>
+          <td class="px-4 py-2">#${run.run_number}</td>
+          <td class="px-4 py-2">${title}</td>
           ${yearsCell}
           ${triggerCell}
-          <td class="px-5 py-3.5">${badge}</td>
-          <td class="px-5 py-3.5 text-gray-500 text-xs">${dateStr}</td>
-          <td class="px-5 py-3.5 text-gray-500 text-xs">${dur}</td>
-          <td class="px-5 py-3.5"><a class="text-xs text-blue-600" href="${run.html_url}" target="_blank" rel="noopener">Abrir</a></td>
+          <td class="px-4 py-2">${badge}</td>
+          <td class="px-4 py-2 text-gray-500 text-xs">${dateStr}</td>
+          <td class="px-4 py-2 text-gray-500 text-xs">${dur}</td>
+          <td class="px-4 py-2"><a class="text-xs text-blue-600" href="${run.html_url}" target="_blank" rel="noopener">Abrir</a></td>
         </tr>
       `;
     })

@@ -15,6 +15,7 @@
   <script src="js/auth.js"></script>
 </head>
 <body class="bg-slate-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 min-h-screen flex">
+  <!-- Canonical application entry point served by Vercel local/prod. Edit public/index.html for UI changes. -->
   <div id="sidebar-overlay" class="fixed inset-0 bg-black/50 z-20 lg:hidden hidden" onclick="toggleSidebar()"></div>
 
   <aside id="sidebar" class="fixed lg:static inset-y-0 left-0 w-64 bg-gradient-to-b from-slate-950 via-blue-950 to-indigo-950 text-white z-30 transform -translate-x-full lg:translate-x-0 transition-transform duration-300 flex flex-col">
@@ -116,39 +117,102 @@
     </header>
 
     <main class="flex-1 p-4 sm:p-6 overflow-auto">
-      <section id="section-dashboard" class="section-content space-y-4">
-        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <div class="stat-card bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-200 dark:border-gray-800"><p class="text-xs text-gray-500">Total de Execuções</p><p id="stat-total" class="text-2xl font-bold">--</p></div>
-          <div class="stat-card bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-200 dark:border-gray-800"><p class="text-xs text-gray-500">Sucesso</p><p id="stat-success" class="text-2xl font-bold text-emerald-600">--</p></div>
-          <div class="stat-card bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-200 dark:border-gray-800"><p class="text-xs text-gray-500">Falhas</p><p id="stat-failed" class="text-2xl font-bold text-red-600">--</p></div>
-          <div class="stat-card bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-200 dark:border-gray-800"><p class="text-xs text-gray-500">Última Execução</p><p id="stat-last-date" class="text-xl font-bold">--</p><p id="stat-last-status" class="text-xs text-gray-400">--</p></div>
+      <section id="section-dashboard" class="section-content space-y-6">
+        <!-- STATS GRID MINIMALISTA -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div class="mini-stat bg-white dark:bg-gray-900 rounded-lg p-4 border border-gray-200 dark:border-gray-800">
+            <p class="text-xs text-gray-500 dark:text-gray-400 font-medium mb-1">Total</p>
+            <p id="stat-total" class="text-2xl font-bold text-gray-900 dark:text-white">--</p>
+          </div>
+          <div class="mini-stat bg-white dark:bg-gray-900 rounded-lg p-4 border border-gray-200 dark:border-gray-800">
+            <p class="text-xs text-gray-500 dark:text-gray-400 font-medium mb-1">Sucesso</p>
+            <p id="stat-success" class="text-2xl font-bold text-green-600 dark:text-green-400">--</p>
+          </div>
+          <div class="mini-stat bg-white dark:bg-gray-900 rounded-lg p-4 border border-gray-200 dark:border-gray-800">
+            <p class="text-xs text-gray-500 dark:text-gray-400 font-medium mb-1">Erros</p>
+            <p id="stat-failed" class="text-2xl font-bold text-red-600 dark:text-red-400">--</p>
+          </div>
+          <div class="mini-stat bg-white dark:bg-gray-900 rounded-lg p-4 border border-gray-200 dark:border-gray-800">
+            <p class="text-xs text-gray-500 dark:text-gray-400 font-medium mb-1">Última exec.</p>
+            <p id="stat-last-date" class="text-lg font-bold text-gray-900 dark:text-white">--</p>
+          </div>
         </div>
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div class="bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-200 dark:border-gray-800"><canvas id="chart-donut"></canvas><p id="chart-donut-empty" class="text-center text-sm text-gray-400 hidden">Sem dados</p></div>
-          <div class="bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-200 dark:border-gray-800"><canvas id="chart-bar"></canvas><p id="chart-bar-empty" class="text-center text-sm text-gray-400 hidden">Sem dados</p></div>
-        </div>
-        <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
-          <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between"><span class="text-sm font-semibold">Execuções Recentes</span><button onclick="loadRuns()" class="text-xs text-blue-600">Atualizar</button></div>
-          <div class="overflow-x-auto">
-            <div id="dash-table-placeholder" class="p-6 text-center text-gray-400">Carregando historico do GitHub...</div>
-            <table id="dash-table" class="w-full hidden text-sm">
-              <thead class="bg-gray-50 dark:bg-gray-800/60"><tr class="text-left text-xs text-gray-500 uppercase"><th class="px-5 py-3">#</th><th class="px-5 py-3">Título</th><th class="px-5 py-3">Ano</th><th class="px-5 py-3">Status</th><th class="px-5 py-3">Iniciado</th><th class="px-5 py-3">Duração</th><th class="px-5 py-3">Ação</th></tr></thead>
-              <tbody id="dash-tbody"></tbody>
-              </table>
-              </div>
-              </div>
-              <div id="neon-preview-card" class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
-              <div class="flex items-center justify-between mb-3"><span class="text-sm font-semibold">Dados no Banco (Neon)</span><button onclick="navigateTo('dados')" class="text-xs text-blue-600">Ver tabela completa →</button></div>
-              <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div class="bg-slate-50 dark:bg-gray-800 rounded-lg p-3 text-center"><p class="text-xs text-gray-500">Total</p><p id="neon-prev-total" class="text-xl font-bold">--</p></div>
-              <div class="bg-slate-50 dark:bg-gray-800 rounded-lg p-3 text-center"><p class="text-xs text-gray-500">Pagos</p><p id="neon-prev-pagos" class="text-xl font-bold text-emerald-600">--%</p></div>
-              <div class="bg-slate-50 dark:bg-gray-800 rounded-lg p-3 text-center"><p class="text-xs text-gray-500">Com Playlist</p><p id="neon-prev-playlist" class="text-xl font-bold text-blue-600">--%</p></div>
-              <div class="bg-slate-50 dark:bg-gray-800 rounded-lg p-3 text-center"><p class="text-xs text-gray-500">Ano</p><p id="neon-prev-anos" class="text-sm font-semibold">--</p></div>
-              </div>
-              </div>
-              </section>
 
-              <section id="section-run" class="section-content hidden">
+        <!-- TWO COLUMN LAYOUT -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <!-- LEFT SIDEBAR: Stats (1/3) -->
+          <div class="space-y-4">
+            <!-- Status por tipo -->
+            <div class="bg-white dark:bg-gray-900 rounded-lg p-4 border border-gray-200 dark:border-gray-800">
+              <h3 class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-3">Por Status</h3>
+              <div class="space-y-3">
+                <div>
+                  <div class="flex justify-between text-sm mb-1.5">
+                    <span class="text-gray-700 dark:text-gray-300">✓ Sucesso</span>
+                    <span class="font-semibold text-gray-900 dark:text-white" id="status-success-count">--</span>
+                  </div>
+                  <div class="w-full bg-gray-200 dark:bg-gray-700 h-2 rounded-full overflow-hidden">
+                    <div class="bg-green-500 h-2 rounded-full" id="status-success-bar" style="width: 0%"></div>
+                  </div>
+                </div>
+                <div>
+                  <div class="flex justify-between text-sm mb-1.5">
+                    <span class="text-gray-700 dark:text-gray-300">✗ Erro</span>
+                    <span class="font-semibold text-gray-900 dark:text-white" id="status-failed-count">--</span>
+                  </div>
+                  <div class="w-full bg-gray-200 dark:bg-gray-700 h-2 rounded-full overflow-hidden">
+                    <div class="bg-red-500 h-2 rounded-full" id="status-failed-bar" style="width: 0%"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Banco de Dados -->
+            <div class="bg-white dark:bg-gray-900 rounded-lg p-4 border border-gray-200 dark:border-gray-800">
+              <h3 class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-3">Banco de Dados</h3>
+              <div class="space-y-2.5 text-sm">
+                <div class="flex justify-between">
+                  <span class="text-gray-700 dark:text-gray-300">Registros</span>
+                  <span class="font-semibold text-gray-900 dark:text-white" id="db-total">--</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-gray-700 dark:text-gray-300">Pagos</span>
+                  <span class="font-semibold text-green-600 dark:text-green-400" id="db-pagos">--</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-gray-700 dark:text-gray-300">Pendentes</span>
+                  <span class="font-semibold text-amber-600 dark:text-amber-400" id="db-pendentes">--</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- RIGHT: Execuções Recentes (2/3) -->
+          <div class="lg:col-span-2 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 overflow-hidden">
+            <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
+              <h3 class="text-sm font-semibold">Execuções Recentes</h3>
+              <button onclick="loadRuns()" class="text-xs text-blue-600 dark:text-blue-400 hover:underline">Atualizar</button>
+            </div>
+            <div class="overflow-x-auto">
+              <div id="dash-table-placeholder" class="p-6 text-center text-gray-400">Carregando histórico do GitHub...</div>
+              <table id="dash-table" class="w-full hidden text-sm">
+                <thead class="bg-gray-50 dark:bg-gray-800/50 border-b border-gray-200 dark:border-gray-700">
+                  <tr class="text-xs text-gray-500 dark:text-gray-400 font-semibold">
+                    <th class="px-4 py-2 text-left">#</th>
+                    <th class="px-4 py-2 text-left">Título</th>
+                    <th class="px-4 py-2 text-left">Ano</th>
+                    <th class="px-4 py-2 text-left">Status</th>
+                    <th class="px-4 py-2 text-left">Data</th>
+                  </tr>
+                </thead>
+                <tbody id="dash-tbody" class="divide-y divide-gray-200 dark:divide-gray-700"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="section-run" class="section-content hidden">
               <div class="max-w-2xl mx-auto space-y-4">
               <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
               <label class="block text-sm font-medium mb-2">Ano para Processar</label>

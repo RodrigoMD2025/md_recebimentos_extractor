@@ -362,11 +362,20 @@ function updateStats(runs) {
   setTxt("stat-success", success);
   setTxt("stat-failed", failed);
 
+  // Update progress bars
+  const successPercent = total > 0 ? (success / total) * 100 : 0;
+  const failedPercent = total > 0 ? (failed / total) * 100 : 0;
+  setVal("status-success-count", success);
+  setVal("status-failed-count", failed);
+  const successBar = document.getElementById("status-success-bar");
+  const failedBar = document.getElementById("status-failed-bar");
+  if (successBar) successBar.style.width = successPercent + "%";
+  if (failedBar) failedBar.style.width = failedPercent + "%";
+
   if (runs.length > 0) {
     const last = runs[0];
     const d = new Date(last.created_at);
     setTxt("stat-last-date", d.toLocaleDateString("pt-BR"));
-    setTxt("stat-last-status", statusLabel(last.conclusion || last.status));
   }
 }
 

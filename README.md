@@ -244,6 +244,7 @@ Para problemas ou sugestões:
 - ✅ **Coluna "Anos"**: Adicionada à tabela de histórico do dashboard
 - ✅ **Estilo melhorado**: Cores de font corrigidas em opções de dropdown
 - ✅ **Compatibilidade Vercel**: App preparado para deploy local via pasta `public`
+- 🔁 **Fonte única de verdade**: o app é servido a partir de `public/`; a pasta `docs/` contém cópias de referência e não é o diretório de deploy.
 
 ### v2.0 - Multi-Year Support & Dashboard (Abril 2026)
 - ✅ **Suporte Multi-Ano**: Coluna YEAR adicionada ao dashboard

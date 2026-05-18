@@ -15,6 +15,7 @@
   <script src="js/auth.js"></script>
 </head>
 <body class="bg-slate-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 min-h-screen flex">
+  <!-- Legacy dashboard copy. The canonical app is public/index.html and is served by Vercel. -->
   <div id="sidebar-overlay" class="fixed inset-0 bg-black/50 z-20 lg:hidden hidden" onclick="toggleSidebar()"></div>
 
   <aside id="sidebar" class="fixed lg:static inset-y-0 left-0 w-64 bg-gradient-to-b from-blue-900 via-blue-900 to-indigo-900 text-white z-30 transform -translate-x-full lg:translate-x-0 transition-transform duration-300 flex flex-col">
@@ -60,34 +61,34 @@
     </header>
 
     <main class="flex-1 p-4 sm:p-6 overflow-auto">
-      <section id="section-dashboard" class="section-content space-y-4">
-        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <div class="stat-card bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-200 dark:border-gray-800"><p class="text-xs text-gray-500">Total de Execuções</p><p id="stat-total" class="text-2xl font-bold">--</p></div>
-          <div class="stat-card bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-200 dark:border-gray-800"><p class="text-xs text-gray-500">Sucesso</p><p id="stat-success" class="text-2xl font-bold text-emerald-600">--</p></div>
-          <div class="stat-card bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-200 dark:border-gray-800"><p class="text-xs text-gray-500">Falhas</p><p id="stat-failed" class="text-2xl font-bold text-red-600">--</p></div>
-          <div class="stat-card bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-200 dark:border-gray-800"><p class="text-xs text-gray-500">Última Execução</p><p id="stat-last-date" class="text-xl font-bold">--</p><p id="stat-last-status" class="text-xs text-gray-400">--</p></div>
+      <section id="section-dashboard" class="section-content space-y-3">
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-2">
+          <div class="stat-card bg-white dark:bg-gray-900 rounded-xl p-3 border border-gray-100 dark:border-gray-800"><p class="text-xs text-gray-500">Total de Execuções</p><p id="stat-total" class="text-xl font-bold">--</p></div>
+          <div class="stat-card bg-white dark:bg-gray-900 rounded-xl p-3 border border-gray-100 dark:border-gray-800"><p class="text-xs text-gray-500">Sucesso</p><p id="stat-success" class="text-xl font-bold text-emerald-600">--</p></div>
+          <div class="stat-card bg-white dark:bg-gray-900 rounded-xl p-3 border border-gray-100 dark:border-gray-800"><p class="text-xs text-gray-500">Falhas</p><p id="stat-failed" class="text-xl font-bold text-red-600">--</p></div>
+          <div class="stat-card bg-white dark:bg-gray-900 rounded-xl p-3 border border-gray-100 dark:border-gray-800"><p class="text-xs text-gray-500">Última Execução</p><p id="stat-last-date" class="text-lg font-bold">--</p><p id="stat-last-status" class="text-xs text-gray-400">--</p></div>
         </div>
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div class="bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-200 dark:border-gray-800"><canvas id="chart-donut"></canvas><p id="chart-donut-empty" class="text-center text-sm text-gray-400 hidden">Sem dados</p></div>
-          <div class="bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-200 dark:border-gray-800"><canvas id="chart-bar"></canvas><p id="chart-bar-empty" class="text-center text-sm text-gray-400 hidden">Sem dados</p></div>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          <div class="bg-white dark:bg-gray-900 rounded-xl p-3 border border-gray-100 dark:border-gray-800"><canvas id="chart-donut"></canvas><p id="chart-donut-empty" class="text-center text-sm text-gray-400 hidden">Sem dados</p></div>
+          <div class="bg-white dark:bg-gray-900 rounded-xl p-3 border border-gray-100 dark:border-gray-800"><canvas id="chart-bar"></canvas><p id="chart-bar-empty" class="text-center text-sm text-gray-400 hidden">Sem dados</p></div>
         </div>
-        <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
-          <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between"><span class="text-sm font-semibold">Execuções Recentes</span><button onclick="loadRuns()" class="text-xs text-blue-600">Atualizar</button></div>
+        <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-100 dark:border-gray-800 overflow-hidden">
+          <div class="px-4 py-2 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between"><span class="text-sm font-semibold">Execuções Recentes</span><button onclick="loadRuns()" class="text-xs text-blue-600">Atualizar</button></div>
           <div class="overflow-x-auto">
-            <div id="dash-table-placeholder" class="p-6 text-center text-gray-400">Configure o token GitHub para ver o histórico</div>
+            <div id="dash-table-placeholder" class="p-4 text-center text-gray-400">Configure o token GitHub para ver o histórico</div>
             <table id="dash-table" class="w-full hidden text-sm">
-              <thead class="bg-gray-50 dark:bg-gray-800/60"><tr class="text-left text-xs text-gray-500 uppercase"><th class="px-5 py-3">#</th><th class="px-5 py-3">Título</th><th class="px-5 py-3">Status</th><th class="px-5 py-3">Iniciado</th><th class="px-5 py-3">Duração</th><th class="px-5 py-3">Ação</th></tr></thead>
+              <thead class="bg-gray-50 dark:bg-gray-800/60"><tr class="text-left text-xs text-gray-500 uppercase"><th class="px-4 py-2">#</th><th class="px-4 py-2">Título</th><th class="px-4 py-2">Status</th><th class="px-4 py-2">Iniciado</th><th class="px-4 py-2">Duração</th><th class="px-4 py-2">Ação</th></tr></thead>
               <tbody id="dash-tbody"></tbody>
             </table>
           </div>
         </div>
-        <div id="neon-preview-card" class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
-          <div class="flex items-center justify-between mb-3"><span class="text-sm font-semibold">Dados no Banco (Neon)</span><button onclick="navigateTo('dados')" class="text-xs text-blue-600">Ver tabela completa →</button></div>
-          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div class="bg-slate-50 dark:bg-gray-800 rounded-lg p-3 text-center"><p class="text-xs text-gray-500">Total</p><p id="neon-prev-total" class="text-xl font-bold">--</p></div>
-            <div class="bg-slate-50 dark:bg-gray-800 rounded-lg p-3 text-center"><p class="text-xs text-gray-500">Pagos</p><p id="neon-prev-pagos" class="text-xl font-bold text-emerald-600">--%</p></div>
-            <div class="bg-slate-50 dark:bg-gray-800 rounded-lg p-3 text-center"><p class="text-xs text-gray-500">Com Playlist</p><p id="neon-prev-playlist" class="text-xl font-bold text-blue-600">--%</p></div>
-            <div class="bg-slate-50 dark:bg-gray-800 rounded-lg p-3 text-center"><p class="text-xs text-gray-500">Anos</p><p id="neon-prev-anos" class="text-sm font-semibold">--</p></div>
+        <div id="neon-preview-card" class="bg-white dark:bg-gray-900 rounded-xl border border-gray-100 dark:border-gray-800 p-3">
+          <div class="flex items-center justify-between mb-2"><span class="text-sm font-semibold">Dados no Banco (Neon)</span><button onclick="navigateTo('dados')" class="text-xs text-blue-600">Ver tabela completa →</button></div>
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div class="bg-slate-50 dark:bg-gray-800 rounded-lg p-2 text-center"><p class="text-xs text-gray-500">Total</p><p id="neon-prev-total" class="text-xl font-bold">--</p></div>
+            <div class="bg-slate-50 dark:bg-gray-800 rounded-lg p-2 text-center"><p class="text-xs text-gray-500">Pagos</p><p id="neon-prev-pagos" class="text-xl font-bold text-emerald-600">--%</p></div>
+            <div class="bg-slate-50 dark:bg-gray-800 rounded-lg p-2 text-center"><p class="text-xs text-gray-500">Com Playlist</p><p id="neon-prev-playlist" class="text-xl font-bold text-blue-600">--%</p></div>
+            <div class="bg-slate-50 dark:bg-gray-800 rounded-lg p-2 text-center"><p class="text-xs text-gray-500">Anos</p><p id="neon-prev-anos" class="text-sm font-semibold">--</p></div>
           </div>
         </div>
       </section>
