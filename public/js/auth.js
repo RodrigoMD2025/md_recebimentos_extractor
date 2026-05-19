@@ -209,6 +209,27 @@
         },
 
         /**
+         * Reautentica o usuário atual com a senha informada.
+         * Útil para operações sensíveis (ex: apagar toda a base).
+         * 
+         * @param {string} password 
+         * @returns {Promise<void>}
+         */
+        reauthenticate: function (password) {
+            return new Promise(function (resolve, reject) {
+                if (!Auth.user || !global.__firebaseAuthUtils) {
+                    return reject(new Error('Ambiente de autenticação não inicializado.'));
+                }
+                var utils = global.__firebaseAuthUtils;
+                var credential = utils.EmailAuthProvider.credential(Auth.user.email, password);
+                
+                utils.reauthenticateWithCredential(Auth.user, credential)
+                    .then(function() { resolve(); })
+                    .catch(function(err) { reject(err); });
+            });
+        },
+
+        /**
          * Retorna um objeto Headers com Authorization: Bearer <token>,
          * pronto para uso em chamadas fetch() para a API.
          *

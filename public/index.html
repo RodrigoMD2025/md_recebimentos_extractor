@@ -7,6 +7,9 @@
   <title>MD Recebimentos — Dashboard</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.5.25/dist/jspdf.plugin.autotable.min.js"></script>
   <link rel="stylesheet" href="css/style.css" />
   <script>
     tailwind.config = { darkMode: "class" };
@@ -118,24 +121,55 @@
 
     <main class="flex-1 p-4 sm:p-6 overflow-auto">
       <section id="section-dashboard" class="section-content space-y-6">
-        <!-- STATS GRID MINIMALISTA -->
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div class="mini-stat bg-white dark:bg-gray-900 rounded-lg p-4 border border-gray-200 dark:border-gray-800">
-            <p class="text-xs text-gray-500 dark:text-gray-400 font-medium mb-1">Total</p>
-            <p id="stat-total" class="text-2xl font-bold text-gray-900 dark:text-white">--</p>
+        <!-- DASHBOARD PIE CARDS -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <p class="text-xs text-gray-500 dark:text-gray-400 font-medium mb-2">Total de Execuções</p>
+                <p id="stat-total" class="text-2xl font-bold text-gray-900 dark:text-white">--</p>
+              </div>
+              <div class="w-24 h-24">
+                <canvas id="mini-chart-total" class="h-full w-full"></canvas>
+              </div>
+            </div>
           </div>
-          <div class="mini-stat bg-white dark:bg-gray-900 rounded-lg p-4 border border-gray-200 dark:border-gray-800">
-            <p class="text-xs text-gray-500 dark:text-gray-400 font-medium mb-1">Sucesso</p>
-            <p id="stat-success" class="text-2xl font-bold text-green-600 dark:text-green-400">--</p>
+          <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <p class="text-xs text-gray-500 dark:text-gray-400 font-medium mb-2">Sucesso</p>
+                <p id="stat-success" class="text-2xl font-bold text-green-600 dark:text-green-400">--</p>
+              </div>
+              <div class="w-24 h-24">
+                <canvas id="mini-chart-success" class="h-full w-full"></canvas>
+              </div>
+            </div>
           </div>
-          <div class="mini-stat bg-white dark:bg-gray-900 rounded-lg p-4 border border-gray-200 dark:border-gray-800">
-            <p class="text-xs text-gray-500 dark:text-gray-400 font-medium mb-1">Erros</p>
-            <p id="stat-failed" class="text-2xl font-bold text-red-600 dark:text-red-400">--</p>
+          <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <p class="text-xs text-gray-500 dark:text-gray-400 font-medium mb-2">Erros</p>
+                <p id="stat-failed" class="text-2xl font-bold text-red-600 dark:text-red-400">--</p>
+              </div>
+              <div class="w-24 h-24">
+                <canvas id="mini-chart-failed" class="h-full w-full"></canvas>
+              </div>
+            </div>
           </div>
-          <div class="mini-stat bg-white dark:bg-gray-900 rounded-lg p-4 border border-gray-200 dark:border-gray-800">
-            <p class="text-xs text-gray-500 dark:text-gray-400 font-medium mb-1">Última exec.</p>
-            <p id="stat-last-date" class="text-lg font-bold text-gray-900 dark:text-white">--</p>
+          <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <p class="text-xs text-gray-500 dark:text-gray-400 font-medium mb-2">Cancelados</p>
+                <p id="stat-cancelled" class="text-2xl font-bold text-gray-900 dark:text-white">--</p>
+              </div>
+              <div class="w-24 h-24">
+                <canvas id="mini-chart-cancelled" class="h-full w-full"></canvas>
+              </div>
+            </div>
           </div>
+        </div>
+        <div class="text-sm text-gray-500 dark:text-gray-400">
+          Última execução: <span id="stat-last-date">--</span>
         </div>
 
         <!-- TWO COLUMN LAYOUT -->
@@ -172,7 +206,7 @@
               <h3 class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-3">Banco de Dados</h3>
               <div class="space-y-2.5 text-sm">
                 <div class="flex justify-between">
-                  <span class="text-gray-700 dark:text-gray-300">Registros</span>
+                  <span class="text-gray-700 dark:text-gray-300">Último Registro</span>
                   <span class="font-semibold text-gray-900 dark:text-white" id="db-total">--</span>
                 </div>
                 <div class="flex justify-between">
@@ -182,6 +216,10 @@
                 <div class="flex justify-between">
                   <span class="text-gray-700 dark:text-gray-300">Pendentes</span>
                   <span class="font-semibold text-amber-600 dark:text-amber-400" id="db-pendentes">--</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-gray-700 dark:text-gray-300">Com Playlist</span>
+                  <span class="font-semibold text-blue-600 dark:text-blue-400" id="db-playlist">--</span>
                 </div>
               </div>
             </div>
@@ -203,6 +241,8 @@
                     <th class="px-4 py-2 text-left">Ano</th>
                     <th class="px-4 py-2 text-left">Status</th>
                     <th class="px-4 py-2 text-left">Data</th>
+                    <th class="px-4 py-2 text-left">Duração</th>
+                    <th class="px-4 py-2 text-left">Ação</th>
                   </tr>
                 </thead>
                 <tbody id="dash-tbody" class="divide-y divide-gray-200 dark:divide-gray-700"></tbody>
@@ -256,7 +296,16 @@
             <div class="lg:col-span-2"><label class="block text-xs font-medium text-gray-500 mb-1">Contratante</label><input id="filtro-contratante" class="input-field text-sm" /></div>
             <div><label class="block text-xs font-medium text-gray-500 mb-1">Status</label><select id="filtro-status" class="input-field text-sm"><option value="">Todos</option><option value="pago">Pago</option><option value="pendente">Pendente</option><option value="cancelado">Cancelado</option></select></div>
             <div><label class="block text-xs font-medium text-gray-500 mb-1">Playlist</label><select id="filtro-playlist" class="input-field text-sm"><option value="">Todos</option><option value="Com Playlist">Com Playlist</option><option value="Sem Playlist">Sem Playlist</option></select></div>
-            <div class="flex items-end gap-2"><button onclick="limparFiltros()" class="px-3 py-2 text-xs border border-gray-200 dark:border-gray-700 rounded-lg">Limpar</button><button onclick="exportarCSV()" class="px-3 py-2 text-xs border border-blue-200 dark:border-blue-800 rounded-lg text-blue-600">Exportar CSV</button></div>
+            <div class="flex flex-col gap-2">
+              <button onclick="aplicarFiltros()" class="w-full px-3 py-2 text-xs bg-blue-600 text-white rounded-lg">Validar</button>
+              <button onclick="limparFiltros()" class="w-full px-3 py-2 text-xs border border-gray-200 dark:border-gray-700 rounded-lg">Limpar</button>
+              <button onclick="confirmarApagarBase()" class="w-full px-3 py-2 text-xs border border-red-200 text-red-600 rounded-lg hover:bg-red-50">Apagar Base</button>
+            </div>
+          </div>
+          <div class="flex flex-wrap gap-2 mt-3">
+            <button onclick="exportarCSV()" class="px-3 py-2 text-xs border border-blue-200 dark:border-blue-800 rounded-lg text-blue-600 hover:bg-blue-50">Exportar.CSV</button>
+            <button onclick="exportarXLSX()" class="px-3 py-2 text-xs border border-emerald-200 dark:border-emerald-800 rounded-lg text-emerald-600 hover:bg-emerald-50">Exportar.XLSX</button>
+            <button onclick="exportarPDF()" class="px-3 py-2 text-xs border border-red-200 dark:border-red-800 rounded-lg text-red-600 hover:bg-red-50">Exportar.PDF</button>
           </div>
         </div>
         <div id="stats-neon" class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
@@ -304,6 +353,10 @@
   </div>
 
   <div id="toast-container" class="fixed bottom-6 right-6 flex flex-col gap-2 z-50 pointer-events-none"></div>
-  <script src="js/app.js"></script>
+  <div id="debug-panel" class="fixed bottom-4 left-4 bg-black/60 text-white text-xs p-2 rounded z-50 max-w-xs hidden" style="backdrop-filter: blur(4px);">
+    <div style="font-weight:600; margin-bottom:4px;">Debug (visível)</div>
+    <div id="debug-log" style="max-height:120px; overflow:auto; line-height:1.2; opacity:0.95;">Aguardando eventos...</div>
+  </div>
+  <script src="js/app.js?v=5"></script>
 </body>
 </html>

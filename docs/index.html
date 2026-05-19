@@ -62,11 +62,54 @@
 
     <main class="flex-1 p-4 sm:p-6 overflow-auto">
       <section id="section-dashboard" class="section-content space-y-3">
-        <div class="grid grid-cols-2 lg:grid-cols-4 gap-2">
-          <div class="stat-card bg-white dark:bg-gray-900 rounded-xl p-3 border border-gray-100 dark:border-gray-800"><p class="text-xs text-gray-500">Total de Execuções</p><p id="stat-total" class="text-xl font-bold">--</p></div>
-          <div class="stat-card bg-white dark:bg-gray-900 rounded-xl p-3 border border-gray-100 dark:border-gray-800"><p class="text-xs text-gray-500">Sucesso</p><p id="stat-success" class="text-xl font-bold text-emerald-600">--</p></div>
-          <div class="stat-card bg-white dark:bg-gray-900 rounded-xl p-3 border border-gray-100 dark:border-gray-800"><p class="text-xs text-gray-500">Falhas</p><p id="stat-failed" class="text-xl font-bold text-red-600">--</p></div>
-          <div class="stat-card bg-white dark:bg-gray-900 rounded-xl p-3 border border-gray-100 dark:border-gray-800"><p class="text-xs text-gray-500">Última Execução</p><p id="stat-last-date" class="text-lg font-bold">--</p><p id="stat-last-status" class="text-xs text-gray-400">--</p></div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-100 dark:border-gray-800 p-3">
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <p class="text-xs text-gray-500">Total de Execuções</p>
+                <p id="stat-total" class="text-xl font-bold">--</p>
+              </div>
+              <div class="w-24 h-24">
+                <canvas id="mini-chart-total" class="h-full w-full"></canvas>
+              </div>
+            </div>
+          </div>
+          <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-100 dark:border-gray-800 p-3">
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <p class="text-xs text-gray-500">Sucesso</p>
+                <p id="stat-success" class="text-xl font-bold text-emerald-600">--</p>
+              </div>
+              <div class="w-24 h-24">
+                <canvas id="mini-chart-success" class="h-full w-full"></canvas>
+              </div>
+            </div>
+          </div>
+          <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-100 dark:border-gray-800 p-3">
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <p class="text-xs text-gray-500">Falhas</p>
+                <p id="stat-failed" class="text-xl font-bold text-red-600">--</p>
+              </div>
+              <div class="w-24 h-24">
+                <canvas id="mini-chart-failed" class="h-full w-full"></canvas>
+              </div>
+            </div>
+          </div>
+          <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-100 dark:border-gray-800 p-3">
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <p class="text-xs text-gray-500">Cancelados</p>
+                <p id="stat-cancelled" class="text-lg font-bold">--</p>
+              </div>
+              <div class="w-24 h-24">
+                <canvas id="mini-chart-cancelled" class="h-full w-full"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="text-sm text-gray-500 dark:text-gray-400">
+          Última execução: <span id="stat-last-date">--</span>
         </div>
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
           <div class="bg-white dark:bg-gray-900 rounded-xl p-3 border border-gray-100 dark:border-gray-800"><canvas id="chart-donut"></canvas><p id="chart-donut-empty" class="text-center text-sm text-gray-400 hidden">Sem dados</p></div>
@@ -141,7 +184,10 @@
             <div class="lg:col-span-2"><label class="block text-xs font-medium text-gray-500 mb-1">Contratante</label><input id="filtro-contratante" class="input-field text-sm" /></div>
             <div><label class="block text-xs font-medium text-gray-500 mb-1">Status</label><select id="filtro-status" class="input-field text-sm"><option value="">Todos</option><option value="pago">Pago</option><option value="pendente">Pendente</option><option value="cancelado">Cancelado</option></select></div>
             <div><label class="block text-xs font-medium text-gray-500 mb-1">Playlist</label><select id="filtro-playlist" class="input-field text-sm"><option value="">Todos</option><option value="Com Playlist">Com Playlist</option><option value="Sem Playlist">Sem Playlist</option></select></div>
-            <div class="flex items-end gap-2"><button onclick="limparFiltros()" class="px-3 py-2 text-xs border border-gray-200 dark:border-gray-700 rounded-lg">Limpar</button><button onclick="exportarCSV()" class="px-3 py-2 text-xs border border-blue-200 dark:border-blue-800 rounded-lg text-blue-600">Exportar CSV</button></div>
+            <div class="flex flex-col gap-2"><button onclick="aplicarFiltros()" class="w-full px-3 py-2 text-xs bg-blue-600 text-white rounded-lg">Validar</button><button onclick="limparFiltros()" class="w-full px-3 py-2 text-xs border border-gray-200 dark:border-gray-700 rounded-lg">Limpar</button></div>
+            <div class="flex items-end">
+              <button onclick="exportarCSV()" class="px-3 py-2 text-xs border border-blue-200 dark:border-blue-800 rounded-lg text-blue-600">Exportar CSV</button>
+            </div>
           </div>
         </div>
         <div id="stats-neon" class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
@@ -194,6 +240,6 @@
   </div>
 
   <div id="toast-container" class="fixed bottom-6 right-6 flex flex-col gap-2 z-50 pointer-events-none"></div>
-  <script src="js/app.js"></script>
+  <script src="js/app.js?v=4"></script>
 </body>
 </html>

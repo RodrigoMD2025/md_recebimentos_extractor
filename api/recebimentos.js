@@ -78,6 +78,7 @@ async function handleGet(req, res) {
     limit: limitRaw = "50",
     order_by: orderByRaw = "contratante",
     order_dir: orderDirRaw = "ASC",
+    execucao_id,
   } = req.query || parseQuery(req.url);
 
   const page = Math.max(1, parseInt(pageRaw, 10) || 1);
@@ -102,28 +103,63 @@ async function handleGet(req, res) {
   }
 
   if (status_pagamento) {
-    params.push(status_pagamento);
-    conditions.push(`status_pagamento = $${params.length}`);
+    if (status_pagamento === "pago") {
+      conditions.push(`(status_pagamento ILIKE '%pago%' OR status_pagamento ILIKE '%recebido%')`);
+    } else if (status_pagamento === "pendente") {
+      conditions.push(`(status_pagamento NOT ILIKE '%pago%' AND status_pagamento NOT ILIKE '%recebido%' AND status_pagamento NOT ILIKE '%cancelado%')`);
+    } else if (status_pagamento === "cancelado") {
+      conditions.push(`status_pagamento ILIKE '%cancelado%'`);
+    } else {
+      params.push(`%${status_pagamento}%`);
+      conditions.push(`status_pagamento ILIKE $${params.length}`);
+    }
   }
 
   if (status_playlist) {
     if (status_playlist === "Com Playlist") {
-      conditions.push(
-        `(status_playlist = 'Com Playlist' OR (playlists IS NOT NULL AND playlists <> ''))`
-      );
+      conditions.push(`status_playlist = 'Com Playlist'`);
     } else if (status_playlist === "Sem Playlist") {
-      conditions.push(
-        `(status_playlist = 'Sem Playlist' OR playlists IS NULL OR playlists = '')`
-      );
+      conditions.push(`status_playlist = 'Sem Playlist'`);
     } else {
-      // valor literal passado diretamente
       params.push(status_playlist);
       conditions.push(`status_playlist = $${params.length}`);
     }
   }
+  
+  if (execucao_id) {
+    params.push(execucao_id);
+    conditions.push(`execucao_id = $${params.length}`);
+  }
 
   const whereClause =
     conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+
+  // Se foi solicitado um resumo por execucao_id, retorne agregados (mais eficiente)
+  const { summary } = req.query || parseQuery(req.url);
+  if (execucao_id && (String(summary) === "1" || String(summary) === "true")) {
+    try {
+      const aggSql = `
+        SELECT
+          COUNT(*) AS total,
+          COUNT(*) FILTER (WHERE status_pagamento ILIKE '%pago%' OR status_pagamento ILIKE '%recebido%') AS pagos,
+          COUNT(*) FILTER (WHERE status_pagamento NOT ILIKE '%pago%' AND status_pagamento NOT ILIKE '%recebido%') AS pendentes,
+          COUNT(*) FILTER (WHERE status_playlist = 'Com Playlist') AS com_playlist
+        FROM recebimentos
+        WHERE execucao_id = $1
+      `;
+      const aggRes = await query(aggSql, [execucao_id]);
+      const row = aggRes.rows[0] || { total: 0, pagos: 0, pendentes: 0, com_playlist: 0 };
+      return res.status(200).json({
+        total: Number(row.total || 0),
+        pagos: Number(row.pagos || 0),
+        pendentes: Number(row.pendentes || 0),
+        com_playlist: Number(row.com_playlist || 0),
+      });
+    } catch (err) {
+      console.error('[recebimentos] Erro ao gerar resumo por execucao_id:', err);
+      return res.status(500).json({ error: 'Erro interno ao gerar resumo.' });
+    }
+  }
 
   try {
     // COUNT (reutiliza os mesmos params)
@@ -186,15 +222,24 @@ async function handleDelete(req, res) {
     return;
   }
 
-  const { execucao_id } = req.query || parseQuery(req.url);
+  const { execucao_id, run_number, deleteAll } = req.query || parseQuery(req.url);
 
-  if (!execucao_id) {
-    return res.status(400).json({ error: "execucao_id é obrigatório para exclusão." });
+  if (!execucao_id && !run_number && String(deleteAll) !== "true") {
+    return res.status(400).json({ error: "execucao_id, run_number ou deleteAll=true é obrigatório para exclusão." });
   }
 
   try {
-    const sql = `DELETE FROM recebimentos WHERE execucao_id = $1`;
-    const result = await query(sql, [execucao_id]);
+    let sql = "";
+    let params = [];
+
+    if (String(deleteAll) === "true") {
+      sql = `DELETE FROM recebimentos`;
+    } else {
+      sql = `DELETE FROM recebimentos WHERE execucao_id = $1 OR execucao_id = $2`;
+      params = [execucao_id, String(run_number || execucao_id)];
+    }
+
+    const result = await query(sql, params);
 
     res.status(200).json({
       message: `Sucesso ao excluir registros.`,

@@ -245,6 +245,7 @@ Para problemas ou sugestões:
 - ✅ **Estilo melhorado**: Cores de font corrigidas em opções de dropdown
 - ✅ **Compatibilidade Vercel**: App preparado para deploy local via pasta `public`
 - 🔁 **Fonte única de verdade**: o app é servido a partir de `public/`; a pasta `docs/` contém cópias de referência e não é o diretório de deploy.
+ - ✅ **Atualização 19/05/2026**: Exibição dos dados do *último* resumo de execução no Dashboard (Último Registro, Pagos, Pendentes, Com Playlist); botão `Aplicar` adicionado ao menu `Dados` para validar filtros; exclusão de execução propaga remoção dos dados no banco e atualiza estatísticas.
 
 ### v2.0 - Multi-Year Support & Dashboard (Abril 2026)
 - ✅ **Suporte Multi-Ano**: Coluna YEAR adicionada ao dashboard

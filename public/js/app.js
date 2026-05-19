@@ -24,6 +24,10 @@ let allRuns = [];
 let execucaoYearsMap = {};
 let donutChart = null;
 let barChart = null;
+let miniChartTotal = null;
+let miniChartSuccess = null;
+let miniChartFailed = null;
+let miniChartCancelled = null;
 let dadosPagAtual = 1;
 let dadosFiltros = {
   ano: "",
@@ -36,6 +40,20 @@ let dadosTotalPags = 1;
 let debounceTimer = null;
 let dadosInicializado = false;
 let progressMonitorInterval = null;
+
+// Mensagens de debug visível na UI (ajuda sem abrir DevTools)
+function debugMsg(msg) {
+  try {
+    const el = document.getElementById('debug-log');
+    if (!el) return;
+    const time = new Date().toLocaleTimeString();
+    const line = document.createElement('div');
+    line.textContent = `${time} — ${msg}`;
+    el.insertBefore(line, el.firstChild);
+    // manter apenas últimas 8 linhas
+    while (el.childNodes.length > 8) el.removeChild(el.lastChild);
+  } catch (_) {}
+}
 
 Auth.init(function (user) {
   appUser = user;
@@ -51,7 +69,9 @@ async function init() {
   bindFiltroEvents();
   await loadGithubConfig();
   await loadRuns();
-  carregarStats();
+  console.debug('[init] chamando carregarStats()'); debugMsg('init: chamando carregarStats()');
+  await carregarStats();
+  console.debug('[init] carregarStats() finalizado'); debugMsg('init: carregarStats() finalizado');
 }
 
 function apiBase() {
@@ -252,53 +272,38 @@ function buildYearTags() {
   `,
     )
     .join("");
+
 }
 
-function toggleYearTag(cb, year) {
-  const label = document.getElementById(`ytag-${year}`);
-  label?.classList.toggle("selected", cb.checked);
-}
-
-function bindFiltroEvents() {
-  const ano = document.getElementById("filtro-ano");
-  const status = document.getElementById("filtro-status");
-  const playlist = document.getElementById("filtro-playlist");
-  const contratante = document.getElementById("filtro-contratante");
-
-  if (ano) ano.addEventListener("change", aplicarFiltros);
-  if (status) status.addEventListener("change", aplicarFiltros);
-  if (playlist) playlist.addEventListener("change", aplicarFiltros);
-  if (contratante) {
-    contratante.addEventListener("input", () => {
-      clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(aplicarFiltros, 400);
-    });
+// Cliente simplificado para chamadas à API do backend usando headers de Auth
+async function githubApiFetch(path, opts = {}) {
+  const headers = (opts && opts.headers) || (await Auth.headers());
+  const url = buildApiUrl(path, opts.params || {});
+  
+  // Se houver body e for um objeto, stringify para JSON
+  let body = opts.body;
+  if (body && typeof body === "object" && !(body instanceof FormData)) {
+    body = JSON.stringify(body);
   }
-}
 
-async function githubApiFetch(path, options = {}) {
-  const headers = await Auth.headers();
-  const response = await fetch(buildApiUrl(path, options.params), {
-    method: options.method || "GET",
-    headers,
-    body: options.body ? JSON.stringify(options.body) : undefined,
+  const response = await fetch(url, { 
+    method: opts.method || "GET", 
+    headers, 
+    body 
   });
 
-  if (response.status === 204) {
-    return null;
-  }
-
+  if (response.status === 204) return null;
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     throw new Error(payload.error || `HTTP ${response.status}`);
   }
-
   return payload;
 }
 
 async function loadRuns(forHistory = false) {
   spinRefresh(true);
   setStatus("loading", "Conectando…");
+  console.debug('[loadRuns] iniciando carga de runs'); debugMsg('loadRuns: iniciando');
 
   try {
     // Passa with_inputs=true para enriquecer as runs com os anos processados
@@ -339,6 +344,7 @@ async function loadRuns(forHistory = false) {
     }
 
     setStatus("ok", "Conectado");
+    console.debug('[loadRuns] runs carregadas:', allRuns.length); debugMsg(`loadRuns: runs carregadas ${allRuns.length}`);
   } catch (err) {
     setStatus("error", "Erro de conexão");
     toast(`Erro ao buscar dados: ${err.message}`, "error");
@@ -354,13 +360,13 @@ function refreshData() {
 function updateStats(runs) {
   const total = runs.length;
   const success = runs.filter((r) => r.conclusion === "success").length;
-  const failed = runs.filter((r) =>
-    ["failure", "cancelled"].includes(r.conclusion),
-  ).length;
+  const failed = runs.filter((r) => r.conclusion === "failure").length;
+  const cancelled = runs.filter((r) => r.conclusion === "cancelled").length;
 
   setTxt("stat-total", total);
   setTxt("stat-success", success);
   setTxt("stat-failed", failed);
+  setTxt("stat-cancelled", cancelled);
 
   // Update progress bars
   const successPercent = total > 0 ? (success / total) * 100 : 0;
@@ -376,10 +382,13 @@ function updateStats(runs) {
     const last = runs[0];
     const d = new Date(last.created_at);
     setTxt("stat-last-date", d.toLocaleDateString("pt-BR"));
+  } else {
+    setTxt("stat-last-date", "--");
   }
 }
 
 function renderCharts(runs) {
+  renderMiniDonuts(runs);
   renderDonut(runs);
   renderBar(runs);
 }
@@ -503,6 +512,73 @@ function renderBar(runs) {
   });
 }
 
+function renderMiniDonuts(runs) {
+  const total = runs.length;
+  const success = runs.filter((r) => r.conclusion === "success").length;
+  const failure = runs.filter((r) => r.conclusion === "failure").length;
+  const cancelled = runs.filter((r) => r.conclusion === "cancelled").length;
+  const other = Math.max(total - success - failure - cancelled, 0);
+
+  const createChart = (canvasId, labels, data, backgroundColor) => {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return null;
+
+    const existing = {
+      "mini-chart-total": miniChartTotal,
+      "mini-chart-success": miniChartSuccess,
+      "mini-chart-failed": miniChartFailed,
+      "mini-chart-cancelled": miniChartCancelled,
+    }[canvasId];
+
+    if (existing) existing.destroy();
+
+    return new Chart(canvas, {
+      type: "doughnut",
+      data: {
+        labels,
+        datasets: [
+          {
+            data,
+            backgroundColor,
+            borderWidth: 0,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: "72%",
+        plugins: { legend: { display: false } },
+      },
+    });
+  };
+
+  miniChartTotal = createChart(
+    "mini-chart-total",
+    ["Sucesso", "Falha", "Cancelado", "Outros"],
+    [success, failure, cancelled, other],
+    ["#059669", "#dc2626", "#9ca3af", "#d97706"],
+  );
+  miniChartSuccess = createChart(
+    "mini-chart-success",
+    ["Sucesso", "Outros"],
+    [success, Math.max(total - success, 0)],
+    ["#059669", "#e5e7eb"],
+  );
+  miniChartFailed = createChart(
+    "mini-chart-failed",
+    ["Falha", "Outros"],
+    [failure, Math.max(total - failure, 0)],
+    ["#dc2626", "#e5e7eb"],
+  );
+  miniChartCancelled = createChart(
+    "mini-chart-cancelled",
+    ["Cancelado", "Outros"],
+    [cancelled, Math.max(total - cancelled, 0)],
+    ["#9ca3af", "#e5e7eb"],
+  );
+}
+
 function fillTable(runs, tbodyId, tableId, placeholderId, withTrigger, execucaoYearsMap = {}) {
   const tbody = document.getElementById(tbodyId);
   const table = document.getElementById(tableId);
@@ -624,8 +700,8 @@ async function deleteRun(runId, runNumber) {
   try {
     toast(`Excluindo execução #${runNumber}...`, "info");
     
-    // 1. Excluir dados no banco (usando runId como execucao_id)
-    await githubApiFetch(`/api/recebimentos?execucao_id=${runId}`, {
+    // 1. Excluir dados no banco (usando runId e runNumber para garantir limpeza)
+    await githubApiFetch(`/api/recebimentos?execucao_id=${runId}&run_number=${runNumber}`, {
       method: "DELETE"
     });
 
@@ -635,7 +711,8 @@ async function deleteRun(runId, runNumber) {
     });
 
     toast(`Execução #${runNumber} excluída com sucesso`, "success");
-    loadRuns(true); // Recarregar histórico
+    await loadRuns(true); // Recarregar histórico
+    try { await carregarStats(); } catch (_) {}
   } catch (err) {
     console.error("Erro ao excluir execução:", err);
     toast(`Erro ao excluir: ${err.message}`, "error");
@@ -668,6 +745,17 @@ function applyFilter() {
     true,
     execucaoYearsMap,
   );
+}
+
+// Vincula eventos dos filtros (não aplica automaticamente ano/status)
+function bindFiltroEvents() {
+  const contratante = document.getElementById("filtro-contratante");
+  if (contratante) {
+    contratante.addEventListener("input", () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {}, 400);
+    });
+  }
 }
 
 async function triggerWorkflow() {
@@ -876,6 +964,7 @@ function spinRefresh(on) {
 }
 
 async function carregarStats() {
+  console.debug('[carregarStats] iniciando'); debugMsg('carregarStats: iniciando');
   try {
     const headers = await Auth.headers();
     const url = buildApiUrl("/api/stats", { ano: dadosFiltros.ano || "" });
@@ -902,6 +991,12 @@ async function carregarStats() {
     setTxt("stat-db-pendentes", pendentes);
     setTxt("stat-db-playlist", comPlaylist);
 
+    // Dashboard - Banco de Dados (Será sobrescrito abaixo se houver última execução)
+    setTxt("db-total", total);
+    setTxt("db-pagos", pagos);
+    setTxt("db-pendentes", pendentes);
+    setTxt("db-playlist", comPlaylist);
+
     setTxt("neon-prev-total", total);
     const pctPagos = total ? ((pagos / total) * 100).toFixed(1) : "0.0";
     const pctPlaylist = total
@@ -910,6 +1005,56 @@ async function carregarStats() {
     setTxt("neon-prev-pagos", `${pctPagos}%`);
     setTxt("neon-prev-playlist", `${pctPlaylist}%`);
     setTxt("neon-prev-anos", anos.join(", ") || "--");
+
+    // Se tivermos uma execução recente, buscar resumo dos registros dessa execução
+    try {
+      if (allRuns && allRuns.length > 0) {
+        const lastRun = allRuns[0];
+        let execStats = null;
+        let execTotal = 0;
+
+        const queryExecucao = async (idValue, label) => {
+          const urlExec = buildApiUrl("/api/recebimentos", { execucao_id: idValue, summary: "1" });
+          debugMsg(`carregarStats: buscando resumo ${label}=${idValue}`);
+          const execRes = await fetch(urlExec, { headers });
+          if (!execRes.ok) {
+            console.warn("[carregarStats] resumo da execução retornou HTTP", execRes.status, idValue);
+            debugMsg(`carregarStats: resumo ${label} HTTP ${execRes.status}`);
+            return null;
+          }
+          const stats = await execRes.json();
+          debugMsg(`carregarStats: resumo ${label} retornou ${JSON.stringify(stats)}`);
+          return stats;
+        };
+
+        execStats = await queryExecucao(lastRun.id, "id");
+        execTotal = Number(execStats?.total || 0);
+
+        if (execTotal === 0 && lastRun.run_number && String(lastRun.run_number) !== String(lastRun.id)) {
+          const retryStats = await queryExecucao(lastRun.run_number, "run_number");
+          if (retryStats && Number(retryStats.total || 0) > 0) {
+            execStats = retryStats;
+            execTotal = Number(execStats.total || 0);
+          }
+        }
+
+        if (execStats) {
+          // Dashboard - Banco de Dados (Sempre mostra a ÚLTIMA EXECUÇÃO conforme solicitado)
+          setTxt("db-total", Number(execStats.total || 0));
+          setTxt("db-pagos", Number(execStats.pagos || 0));
+          setTxt("db-pendentes", Number(execStats.pendentes || 0));
+          setTxt("db-playlist", Number(execStats.com_playlist || 0));
+
+          // Nota: stat-db-* (Menu Dados) permanecem com os valores filtrados por ano/filtros
+        }
+      }
+    } catch (err) {
+      console.error("Erro ao buscar resumo da última execução:", err);
+      debugMsg(`carregarStats: erro ao buscar resumo da última execução: ${err.message}`);
+      console.debug('[carregarStats] fallback aplicado após erro no resumo da execução');
+      debugMsg('carregarStats: fallback zeros aplicado');
+    }
+    console.debug('[carregarStats] finalizado'); debugMsg('carregarStats: finalizado');
 
     const selAno = document.getElementById("filtro-ano");
     if (selAno && selAno.options.length <= 1) {
@@ -924,6 +1069,23 @@ async function carregarStats() {
     toast(`Erro ao carregar stats: ${err.message}`, "error");
   }
 }
+
+// Tentativa extra de auto-refresh ao carregar a página (fallback caso init não dispare)
+window.addEventListener("load", () => {
+  try {
+    debugMsg("window.load: agendando auto-refresh");
+    setTimeout(() => {
+      try {
+        refreshData();
+        carregarStats();
+        debugMsg("auto-refresh: refreshData() e carregarStats() chamados");
+      } catch (e) {
+        debugMsg("auto-refresh: erro ao chamar refreshData/carregarStats");
+        console.error(e);
+      }
+    }, 700);
+  } catch (_) {}
+});
 
 async function carregarDados(pagina = 1) {
   try {
@@ -1022,7 +1184,7 @@ function mudarPagina(delta) {
 function aplicarFiltros() {
   dadosFiltros = {
     ano: getVal("filtro-ano"),
-    contratante: getVal("filtro-contratante"),
+    contratante: getVal("filtro-contratante").trim(),
     status_pagamento: getVal("filtro-status"),
     status_playlist: getVal("filtro-playlist"),
   };
@@ -1094,6 +1256,141 @@ async function exportarCSV() {
     link.remove();
   } catch (err) {
     toast(`Erro ao exportar CSV: ${err.message}`, "error");
+  }
+}
+
+async function exportarXLSX() {
+  try {
+    toast("Preparando planilha...", "info");
+    const headers = await Auth.headers();
+    const params = {
+      limit: 10000,
+      ano: dadosFiltros.ano,
+      contratante: dadosFiltros.contratante,
+      status_pagamento: dadosFiltros.status_pagamento,
+      status_playlist: dadosFiltros.status_playlist,
+    };
+    const url = buildApiUrl("/api/recebimentos", params);
+    const res = await fetch(url, { headers });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const rows = data.data || [];
+
+    const excelData = rows.map((r) => ({
+      Contratante: r.contratante,
+      Código: r.codigo_contrato,
+      Vencimento: r.vencimento,
+      Valor: r.valor_parcela,
+      Status: r.status_pagamento,
+      "Pago Em": r.pago_em,
+      Playlist: r.status_playlist,
+      Faixas: r.faixas,
+      Período: r.periodo,
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(excelData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Recebimentos");
+    XLSX.writeFile(workbook, `recebimentos_${dadosFiltros.ano || "todos"}.xlsx`);
+    toast("Excel exportado com sucesso", "success");
+  } catch (err) {
+    toast(`Erro ao exportar Excel: ${err.message}`, "error");
+  }
+}
+
+async function exportarPDF() {
+  try {
+    toast("Gerando PDF...", "info");
+    const headers = await Auth.headers();
+    const params = {
+      limit: 10000,
+      ano: dadosFiltros.ano,
+      contratante: dadosFiltros.contratante,
+      status_pagamento: dadosFiltros.status_pagamento,
+      status_playlist: dadosFiltros.status_playlist,
+    };
+    const url = buildApiUrl("/api/recebimentos", params);
+    const res = await fetch(url, { headers });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const rows = data.data || [];
+
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF("l", "mm", "a4");
+
+    doc.setFontSize(16);
+    doc.text(`Relatório de Recebimentos - ${dadosFiltros.ano || "Todos os Anos"}`, 14, 15);
+    doc.setFontSize(10);
+    doc.text(`Gerado em: ${new Date().toLocaleString()}`, 14, 22);
+
+    const tableHeaders = [
+      ["Contratante", "Código", "Vencimento", "Valor", "Status", "Pago Em", "Playlist", "Faixas"],
+    ];
+
+    const tableData = rows.map((r) => [
+      r.contratante,
+      r.codigo_contrato,
+      r.vencimento,
+      r.valor_parcela,
+      r.status_pagamento,
+      r.pago_em,
+      r.status_playlist,
+      r.faixas,
+    ]);
+
+    doc.autoTable({
+      head: tableHeaders,
+      body: tableData,
+      startY: 30,
+      theme: "grid",
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [37, 99, 235] },
+    });
+
+    doc.save(`recebimentos_${dadosFiltros.ano || "todos"}.pdf`);
+    toast("PDF exportado com sucesso", "success");
+  } catch (err) {
+    toast(`Erro ao exportar PDF: ${err.message}`, "error");
+  }
+}
+
+async function confirmarApagarBase() {
+  if (!confirm("ATENÇÃO: Isso apagará TODOS os dados de recebimentos do banco de dados permanentemente. Deseja continuar?")) {
+    return;
+  }
+
+  const senha = prompt("Para confirmar esta operação crítica, informe sua senha de acesso:");
+  if (!senha) return;
+
+  try {
+    toast("Verificando autenticação...", "info");
+    // 1. Reautenticar para validar a senha
+    await Auth.reauthenticate(senha);
+    
+    toast("Senha validada. Apagando base de dados...", "info");
+    
+    // 2. Chamar API para apagar tudo
+    const headers = await Auth.headers();
+    const url = buildApiUrl("/api/recebimentos", { deleteAll: "true" });
+    const res = await fetch(url, { method: "DELETE", headers });
+    
+    if (!res.ok) {
+      const errorData = await res.json();
+      throw new Error(errorData.error || `HTTP ${res.status}`);
+    }
+
+    const result = await res.json();
+    toast(`Sucesso! ${result.deletedCount} registros removidos.`, "success");
+    
+    // 3. Atualizar UI
+    carregarDados(1);
+    try { await carregarStats(); } catch (_) {}
+    
+  } catch (err) {
+    console.error("Erro ao apagar base:", err);
+    let msg = err.message;
+    if (msg.includes("auth/wrong-password")) msg = "Senha incorreta.";
+    toast(`Erro: ${msg}`, "error");
   }
 }
 

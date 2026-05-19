@@ -9,7 +9,8 @@ window.FIREBASE_CONFIG = {
 };
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getAuth } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getAuth, EmailAuthProvider, reauthenticateWithCredential } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 const app = initializeApp(window.FIREBASE_CONFIG);
 window.__firebaseAuth = getAuth(app);
+window.__firebaseAuthUtils = { EmailAuthProvider, reauthenticateWithCredential };

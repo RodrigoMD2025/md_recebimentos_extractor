@@ -24,6 +24,10 @@ let allRuns = [];
 let execucaoYearsMap = {};
 let donutChart = null;
 let barChart = null;
+let miniChartTotal = null;
+let miniChartSuccess = null;
+let miniChartFailed = null;
+let miniChartCancelled = null;
 let dadosPagAtual = 1;
 let dadosFiltros = {
   ano: "",
@@ -35,6 +39,19 @@ let dadosTotal = 0;
 let dadosTotalPags = 1;
 let debounceTimer = null;
 let dadosInicializado = false;
+
+// Debug UI helper (similar ao public/js/app.js) — exibe mensagens no painel debug quando presente
+function debugMsg(msg) {
+  try {
+    const el = document.getElementById('debug-log');
+    if (!el) return;
+    const time = new Date().toLocaleTimeString();
+    const line = document.createElement('div');
+    line.textContent = `${time} — ${msg}`;
+    el.insertBefore(line, el.firstChild);
+    while (el.childNodes.length > 8) el.removeChild(el.lastChild);
+  } catch (_) {}
+}
 
 Auth.init(function (user) {
   appUser = user;
@@ -302,23 +319,27 @@ function refreshData() {
 function updateStats(runs) {
   const total = runs.length;
   const success = runs.filter((r) => r.conclusion === "success").length;
-  const failed = runs.filter((r) =>
-    ["failure", "cancelled"].includes(r.conclusion),
-  ).length;
+  const failed = runs.filter((r) => r.conclusion === "failure").length;
+  const cancelled = runs.filter((r) => r.conclusion === "cancelled").length;
 
   setTxt("stat-total", total);
   setTxt("stat-success", success);
   setTxt("stat-failed", failed);
+  setTxt("stat-cancelled", cancelled);
 
   if (runs.length > 0) {
     const last = runs[0];
     const d = new Date(last.created_at);
     setTxt("stat-last-date", d.toLocaleDateString("pt-BR"));
     setTxt("stat-last-status", statusLabel(last.conclusion || last.status));
+  } else {
+    setTxt("stat-last-date", "--");
+    setTxt("stat-last-status", "--");
   }
 }
 
 function renderCharts(runs) {
+  renderMiniDonuts(runs);
   renderDonut(runs);
   renderBar(runs);
 }
@@ -440,6 +461,73 @@ function renderBar(runs) {
       },
     },
   });
+}
+
+function renderMiniDonuts(runs) {
+  const total = runs.length;
+  const success = runs.filter((r) => r.conclusion === "success").length;
+  const failure = runs.filter((r) => r.conclusion === "failure").length;
+  const cancelled = runs.filter((r) => r.conclusion === "cancelled").length;
+  const other = Math.max(total - success - failure - cancelled, 0);
+
+  const createChart = (canvasId, labels, data, backgroundColor) => {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return null;
+
+    const existing = {
+      "mini-chart-total": miniChartTotal,
+      "mini-chart-success": miniChartSuccess,
+      "mini-chart-failed": miniChartFailed,
+      "mini-chart-cancelled": miniChartCancelled,
+    }[canvasId];
+
+    if (existing) existing.destroy();
+
+    return new Chart(canvas, {
+      type: "doughnut",
+      data: {
+        labels,
+        datasets: [
+          {
+            data,
+            backgroundColor,
+            borderWidth: 0,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: "72%",
+        plugins: { legend: { display: false } },
+      },
+    });
+  };
+
+  miniChartTotal = createChart(
+    "mini-chart-total",
+    ["Sucesso", "Falha", "Cancelado", "Outros"],
+    [success, failure, cancelled, other],
+    ["#059669", "#dc2626", "#9ca3af", "#d97706"],
+  );
+  miniChartSuccess = createChart(
+    "mini-chart-success",
+    ["Sucesso", "Outros"],
+    [success, Math.max(total - success, 0)],
+    ["#059669", "#e5e7eb"],
+  );
+  miniChartFailed = createChart(
+    "mini-chart-failed",
+    ["Falha", "Outros"],
+    [failure, Math.max(total - failure, 0)],
+    ["#dc2626", "#e5e7eb"],
+  );
+  miniChartCancelled = createChart(
+    "mini-chart-cancelled",
+    ["Cancelado", "Outros"],
+    [cancelled, Math.max(total - cancelled, 0)],
+    ["#9ca3af", "#e5e7eb"],
+  );
 }
 
 function fillTable(runs, tbodyId, tableId, placeholderId, withTrigger, execucaoYearsMap = {}) {
@@ -760,6 +848,52 @@ async function carregarStats() {
     setTxt("neon-prev-pagos", `${pctPagos}%`);
     setTxt("neon-prev-playlist", `${pctPlaylist}%`);
     setTxt("neon-prev-anos", anos.join(", ") || "--");
+
+    try {
+      if (allRuns && allRuns.length > 0) {
+        const lastRun = allRuns[0];
+        let execStats = null;
+        let execTotal = 0;
+        const queryExecucao = async (idValue, label) => {
+          const urlExec = buildApiUrl("/api/recebimentos", { execucao_id: idValue, summary: "1" });
+          debugMsg(`carregarStats: buscando resumo ${label}=${idValue}`);
+          const execRes = await fetch(urlExec, { headers });
+          if (!execRes.ok) {
+            console.warn("[carregarStats] resumo da execução retornou HTTP", execRes.status, idValue);
+            return null;
+          }
+          const stats = await execRes.json();
+          debugMsg(`carregarStats: resumo ${label} retornou ${JSON.stringify(stats)}`);
+          return stats;
+        };
+
+        execStats = await queryExecucao(lastRun.id, "id");
+        execTotal = Number(execStats?.total || 0);
+
+        if (execTotal === 0 && lastRun.run_number && String(lastRun.run_number) !== String(lastRun.id)) {
+          const retryStats = await queryExecucao(lastRun.run_number, "run_number");
+          if (retryStats && Number(retryStats.total || 0) > 0) {
+            execStats = retryStats;
+            execTotal = Number(execStats.total || 0);
+          }
+        }
+
+        if (execStats) {
+          setTxt("stat-db-total", Number(execStats.total || 0));
+          setTxt("stat-db-pagos", Number(execStats.pagos || 0));
+          setTxt("stat-db-pendentes", Number(execStats.pendentes || 0));
+          setTxt("neon-prev-total", Number(execStats.total || 0));
+          const pctP = execTotal ? ((Number(execStats.pagos || 0) / execTotal) * 100).toFixed(1) : "0.0";
+          setTxt("neon-prev-pagos", `${pctP}%`);
+        }
+      }
+    } catch (err) {
+      console.error("Erro ao buscar resumo da última execução:", err);
+      debugMsg(`carregarStats: falha resumo última execução: ${err.message}`);
+      setTxt("stat-db-total", 0);
+      setTxt("stat-db-pagos", 0);
+      setTxt("stat-db-pendentes", 0);
+    }
 
     const selAno = document.getElementById("filtro-ano");
     if (selAno && selAno.options.length <= 1) {
