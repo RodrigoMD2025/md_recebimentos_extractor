@@ -24,10 +24,11 @@ let allRuns = [];
 let execucaoYearsMap = {};
 let donutChart = null;
 let barChart = null;
-let miniChartTotal = null;
-let miniChartSuccess = null;
-let miniChartFailed = null;
-let miniChartCancelled = null;
+let cardChartAnos = null;
+let cardChartPlaylist = null;
+let cardChartFinanceiro = null;
+let cardChartExecucao = null;
+let cachedStatsData = null;
 let dadosPagAtual = 1;
 let dadosFiltros = {
   ano: "",
@@ -388,7 +389,7 @@ function updateStats(runs) {
 }
 
 function renderCharts(runs) {
-  renderMiniDonuts(runs);
+  renderDashboardCards(runs, cachedStatsData);
   renderDonut(runs);
   renderBar(runs);
 }
@@ -512,71 +513,271 @@ function renderBar(runs) {
   });
 }
 
-function renderMiniDonuts(runs) {
-  const total = runs.length;
-  const success = runs.filter((r) => r.conclusion === "success").length;
-  const failure = runs.filter((r) => r.conclusion === "failure").length;
-  const cancelled = runs.filter((r) => r.conclusion === "cancelled").length;
-  const other = Math.max(total - success - failure - cancelled, 0);
+function renderDashboardCards(runs, statsData) {
+  // Palette for year slices
+  const yearPalette = [
+    "#8b5cf6", "#6366f1", "#a78bfa", "#c084fc",
+    "#7c3aed", "#4f46e5", "#818cf8", "#e879f9",
+  ];
 
-  const createChart = (canvasId, labels, data, backgroundColor) => {
-    const canvas = document.getElementById(canvasId);
-    if (!canvas) return null;
+  // Helper: build custom legend HTML
+  function buildLegend(containerId, items) {
+    const el = document.getElementById(containerId);
+    if (!el) return;
+    el.innerHTML = items
+      .map(
+        (it) =>
+          `<span class="inline-flex items-center gap-1"><span class="inline-block w-2 h-2 rounded-full" style="background:${it.color}"></span>${it.label} <b>${it.pct}%</b></span>`,
+      )
+      .join("");
+  }
 
-    const existing = {
-      "mini-chart-total": miniChartTotal,
-      "mini-chart-success": miniChartSuccess,
-      "mini-chart-failed": miniChartFailed,
-      "mini-chart-cancelled": miniChartCancelled,
-    }[canvasId];
+  // ── Card 01: Anos (pie) ──────────────────────────────────────────────────
+  {
+    const canvas = document.getElementById("card-chart-anos");
+    const empty = document.getElementById("card-chart-anos-empty");
+    if (canvas) {
+      if (cardChartAnos) { cardChartAnos.destroy(); cardChartAnos = null; }
 
-    if (existing) existing.destroy();
+      const stats = statsData?.stats_por_ano || [];
+      const totalAll = stats.reduce((a, s) => a + Number(s.total || 0), 0);
 
-    return new Chart(canvas, {
-      type: "doughnut",
-      data: {
-        labels,
-        datasets: [
-          {
-            data,
-            backgroundColor,
-            borderWidth: 0,
+      if (totalAll === 0) {
+        canvas.classList.add("hidden");
+        empty?.classList.remove("hidden");
+        buildLegend("card-anos-legend", []);
+      } else {
+        canvas.classList.remove("hidden");
+        empty?.classList.add("hidden");
+
+        const labels = stats.map((s) => String(s.ano));
+        const data = stats.map((s) => Number(s.total || 0));
+        const colors = labels.map((_, i) => yearPalette[i % yearPalette.length]);
+
+        cardChartAnos = new Chart(canvas, {
+          type: "doughnut",
+          data: {
+            labels,
+            datasets: [{ data, backgroundColor: colors, borderWidth: 0, hoverOffset: 6 }],
           },
-        ],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        cutout: "72%",
-        plugins: { legend: { display: false } },
-      },
-    });
-  };
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            cutout: "65%",
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  label: (ctx) => {
+                    const pct = totalAll ? ((ctx.parsed / totalAll) * 100).toFixed(1) : "0";
+                    return `${ctx.label}: ${ctx.parsed} (${pct}%)`;
+                  },
+                },
+              },
+            },
+          },
+        });
 
-  miniChartTotal = createChart(
-    "mini-chart-total",
-    ["Sucesso", "Falha", "Cancelado", "Outros"],
-    [success, failure, cancelled, other],
-    ["#059669", "#dc2626", "#9ca3af", "#d97706"],
-  );
-  miniChartSuccess = createChart(
-    "mini-chart-success",
-    ["Sucesso", "Outros"],
-    [success, Math.max(total - success, 0)],
-    ["#059669", "#e5e7eb"],
-  );
-  miniChartFailed = createChart(
-    "mini-chart-failed",
-    ["Falha", "Outros"],
-    [failure, Math.max(total - failure, 0)],
-    ["#dc2626", "#e5e7eb"],
-  );
-  miniChartCancelled = createChart(
-    "mini-chart-cancelled",
-    ["Cancelado", "Outros"],
-    [cancelled, Math.max(total - cancelled, 0)],
-    ["#9ca3af", "#e5e7eb"],
-  );
+        buildLegend(
+          "card-anos-legend",
+          labels.map((l, i) => ({
+            label: l,
+            color: colors[i],
+            pct: ((data[i] / totalAll) * 100).toFixed(1),
+          })),
+        );
+      }
+    }
+  }
+
+  // ── Card 02: Playlist (pie) ──────────────────────────────────────────────
+  {
+    const canvas = document.getElementById("card-chart-playlist");
+    const empty = document.getElementById("card-chart-playlist-empty");
+    if (canvas) {
+      if (cardChartPlaylist) { cardChartPlaylist.destroy(); cardChartPlaylist = null; }
+
+      const stats = statsData?.stats_por_ano || [];
+      const comPl = stats.reduce((a, s) => a + Number(s.com_playlist || 0), 0);
+      const semPl = stats.reduce((a, s) => a + Number(s.sem_playlist || 0), 0);
+      const totalPl = comPl + semPl;
+
+      if (totalPl === 0) {
+        canvas.classList.add("hidden");
+        empty?.classList.remove("hidden");
+        buildLegend("card-playlist-legend", []);
+      } else {
+        canvas.classList.remove("hidden");
+        empty?.classList.add("hidden");
+
+        cardChartPlaylist = new Chart(canvas, {
+          type: "doughnut",
+          data: {
+            labels: ["Com Playlist", "Sem Playlist"],
+            datasets: [{
+              data: [comPl, semPl],
+              backgroundColor: ["#3b82f6", "#94a3b8"],
+              borderWidth: 0,
+              hoverOffset: 6,
+            }],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            cutout: "65%",
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  label: (ctx) => {
+                    const pct = totalPl ? ((ctx.parsed / totalPl) * 100).toFixed(1) : "0";
+                    return `${ctx.label}: ${ctx.parsed} (${pct}%)`;
+                  },
+                },
+              },
+            },
+          },
+        });
+
+        buildLegend("card-playlist-legend", [
+          { label: "Com Playlist", color: "#3b82f6", pct: ((comPl / totalPl) * 100).toFixed(1) },
+          { label: "Sem Playlist", color: "#94a3b8", pct: ((semPl / totalPl) * 100).toFixed(1) },
+        ]);
+      }
+    }
+  }
+
+  // ── Card 03: Financeiro (pie) ────────────────────────────────────────────
+  {
+    const canvas = document.getElementById("card-chart-financeiro");
+    const empty = document.getElementById("card-chart-financeiro-empty");
+    if (canvas) {
+      if (cardChartFinanceiro) { cardChartFinanceiro.destroy(); cardChartFinanceiro = null; }
+
+      const stats = statsData?.stats_por_ano || [];
+      const pagos = stats.reduce((a, s) => a + Number(s.pagos || 0), 0);
+      const pendentes = stats.reduce((a, s) => a + Number(s.pendentes || 0), 0);
+      const totalFin = pagos + pendentes;
+
+      if (totalFin === 0) {
+        canvas.classList.add("hidden");
+        empty?.classList.remove("hidden");
+        buildLegend("card-financeiro-legend", []);
+      } else {
+        canvas.classList.remove("hidden");
+        empty?.classList.add("hidden");
+
+        cardChartFinanceiro = new Chart(canvas, {
+          type: "doughnut",
+          data: {
+            labels: ["Pagos", "Não Pagos"],
+            datasets: [{
+              data: [pagos, pendentes],
+              backgroundColor: ["#059669", "#f59e0b"],
+              borderWidth: 0,
+              hoverOffset: 6,
+            }],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            cutout: "65%",
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  label: (ctx) => {
+                    const pct = totalFin ? ((ctx.parsed / totalFin) * 100).toFixed(1) : "0";
+                    return `${ctx.label}: ${ctx.parsed} (${pct}%)`;
+                  },
+                },
+              },
+            },
+          },
+        });
+
+        buildLegend("card-financeiro-legend", [
+          { label: "Pagos", color: "#059669", pct: ((pagos / totalFin) * 100).toFixed(1) },
+          { label: "Não Pagos", color: "#f59e0b", pct: ((pendentes / totalFin) * 100).toFixed(1) },
+        ]);
+      }
+    }
+  }
+
+  // ── Card 04: Execução (bar chart) ────────────────────────────────────────
+  {
+    const canvas = document.getElementById("card-chart-execucao");
+    const empty = document.getElementById("card-chart-execucao-empty");
+    if (canvas) {
+      if (cardChartExecucao) { cardChartExecucao.destroy(); cardChartExecucao = null; }
+
+      const total = runs.length;
+      const success = runs.filter((r) => r.conclusion === "success").length;
+      const failure = runs.filter((r) => r.conclusion === "failure").length;
+      const cancelled = runs.filter((r) => r.conclusion === "cancelled").length;
+
+      if (total === 0) {
+        canvas.classList.add("hidden");
+        empty?.classList.remove("hidden");
+        buildLegend("card-execucao-legend", []);
+      } else {
+        canvas.classList.remove("hidden");
+        empty?.classList.add("hidden");
+
+        const labels = ["Execuções", "Sucesso", "Erros", "Cancelados"];
+        const data = [total, success, failure, cancelled];
+        const colors = ["#6366f1", "#059669", "#dc2626", "#9ca3af"];
+
+        cardChartExecucao = new Chart(canvas, {
+          type: "bar",
+          data: {
+            labels,
+            datasets: [{
+              data,
+              backgroundColor: colors,
+              borderRadius: 6,
+              borderWidth: 0,
+              barPercentage: 0.6,
+              categoryPercentage: 0.7,
+            }],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  label: (ctx) => {
+                    const pct = total ? ((ctx.parsed.y / total) * 100).toFixed(1) : "0";
+                    return `${ctx.label}: ${ctx.parsed.y} (${pct}%)`;
+                  },
+                },
+              },
+            },
+            scales: {
+              x: {
+                grid: { display: false },
+                ticks: { color: labelColor(), font: { size: 10 } },
+              },
+              y: {
+                beginAtZero: true,
+                grid: { color: isDark() ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)" },
+                ticks: { color: labelColor(), font: { size: 10 }, stepSize: 1 },
+              },
+            },
+          },
+        });
+
+        buildLegend("card-execucao-legend", [
+          { label: "Total", color: "#6366f1", pct: "100" },
+          { label: "Sucesso", color: "#059669", pct: ((success / total) * 100).toFixed(1) },
+          { label: "Erros", color: "#dc2626", pct: ((failure / total) * 100).toFixed(1) },
+          { label: "Cancelados", color: "#9ca3af", pct: ((cancelled / total) * 100).toFixed(1) },
+        ]);
+      }
+    }
+  }
 }
 
 function fillTable(runs, tbodyId, tableId, placeholderId, withTrigger, execucaoYearsMap = {}) {
@@ -972,8 +1173,14 @@ async function carregarStats() {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
 
+    // Cache stats data for dashboard card charts
+    cachedStatsData = data;
+
     const stats = data.stats_por_ano || [];
     const anos = data.anos_disponiveis || [];
+
+    // Re-render dashboard cards with fresh stats
+    if (allRuns.length) renderDashboardCards(allRuns, cachedStatsData);
 
     const total = stats.reduce((acc, s) => acc + Number(s.total || 0), 0);
     const pagos = stats.reduce((acc, s) => acc + Number(s.pagos || 0), 0);

@@ -123,49 +123,76 @@
       <section id="section-dashboard" class="section-content space-y-6">
         <!-- DASHBOARD PIE CARDS -->
         <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-          <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
-            <div class="flex items-center justify-between gap-4">
+          <!-- Card 01: Anos -->
+          <div class="dash-card bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
+            <div class="flex items-center justify-between mb-3">
               <div>
-                <p class="text-xs text-gray-500 dark:text-gray-400 font-medium mb-2">Total de Execuções</p>
-                <p id="stat-total" class="text-2xl font-bold text-gray-900 dark:text-white">--</p>
+                <p class="text-sm font-semibold text-gray-800 dark:text-gray-100">Anos</p>
+                <p class="text-[11px] text-gray-400 dark:text-gray-500">Distribuição por ano</p>
               </div>
-              <div class="w-24 h-24">
-                <canvas id="mini-chart-total" class="h-full w-full"></canvas>
+              <div class="dash-card-icon dash-card-icon-purple">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
               </div>
             </div>
+            <div class="relative flex items-center justify-center" style="height:140px">
+              <canvas id="card-chart-anos"></canvas>
+              <p id="card-chart-anos-empty" class="absolute text-xs text-gray-400 hidden">Sem dados</p>
+            </div>
+            <div id="card-anos-legend" class="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-gray-500 dark:text-gray-400"></div>
           </div>
-          <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
-            <div class="flex items-center justify-between gap-4">
+
+          <!-- Card 02: Playlist -->
+          <div class="dash-card bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
+            <div class="flex items-center justify-between mb-3">
               <div>
-                <p class="text-xs text-gray-500 dark:text-gray-400 font-medium mb-2">Sucesso</p>
-                <p id="stat-success" class="text-2xl font-bold text-green-600 dark:text-green-400">--</p>
+                <p class="text-sm font-semibold text-gray-800 dark:text-gray-100">Playlist</p>
+                <p class="text-[11px] text-gray-400 dark:text-gray-500">Com vs Sem Playlist</p>
               </div>
-              <div class="w-24 h-24">
-                <canvas id="mini-chart-success" class="h-full w-full"></canvas>
+              <div class="dash-card-icon dash-card-icon-blue">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z"/></svg>
               </div>
             </div>
+            <div class="relative flex items-center justify-center" style="height:140px">
+              <canvas id="card-chart-playlist"></canvas>
+              <p id="card-chart-playlist-empty" class="absolute text-xs text-gray-400 hidden">Sem dados</p>
+            </div>
+            <div id="card-playlist-legend" class="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-gray-500 dark:text-gray-400"></div>
           </div>
-          <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
-            <div class="flex items-center justify-between gap-4">
+
+          <!-- Card 03: Financeiro -->
+          <div class="dash-card bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
+            <div class="flex items-center justify-between mb-3">
               <div>
-                <p class="text-xs text-gray-500 dark:text-gray-400 font-medium mb-2">Erros</p>
-                <p id="stat-failed" class="text-2xl font-bold text-red-600 dark:text-red-400">--</p>
+                <p class="text-sm font-semibold text-gray-800 dark:text-gray-100">Financeiro</p>
+                <p class="text-[11px] text-gray-400 dark:text-gray-500">Pagos vs Não Pagos</p>
               </div>
-              <div class="w-24 h-24">
-                <canvas id="mini-chart-failed" class="h-full w-full"></canvas>
+              <div class="dash-card-icon dash-card-icon-green">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
               </div>
             </div>
+            <div class="relative flex items-center justify-center" style="height:140px">
+              <canvas id="card-chart-financeiro"></canvas>
+              <p id="card-chart-financeiro-empty" class="absolute text-xs text-gray-400 hidden">Sem dados</p>
+            </div>
+            <div id="card-financeiro-legend" class="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-gray-500 dark:text-gray-400"></div>
           </div>
-          <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
-            <div class="flex items-center justify-between gap-4">
+
+          <!-- Card 04: Execução (Bar Chart) -->
+          <div class="dash-card bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
+            <div class="flex items-center justify-between mb-3">
               <div>
-                <p class="text-xs text-gray-500 dark:text-gray-400 font-medium mb-2">Cancelados</p>
-                <p id="stat-cancelled" class="text-2xl font-bold text-gray-900 dark:text-white">--</p>
+                <p class="text-sm font-semibold text-gray-800 dark:text-gray-100">Execução</p>
+                <p class="text-[11px] text-gray-400 dark:text-gray-500">Sucesso, Erros e Cancelados</p>
               </div>
-              <div class="w-24 h-24">
-                <canvas id="mini-chart-cancelled" class="h-full w-full"></canvas>
+              <div class="dash-card-icon dash-card-icon-amber">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
               </div>
             </div>
+            <div class="relative flex items-center justify-center" style="height:140px">
+              <canvas id="card-chart-execucao"></canvas>
+              <p id="card-chart-execucao-empty" class="absolute text-xs text-gray-400 hidden">Sem dados</p>
+            </div>
+            <div id="card-execucao-legend" class="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-gray-500 dark:text-gray-400"></div>
           </div>
         </div>
         <div class="text-sm text-gray-500 dark:text-gray-400">
@@ -176,31 +203,6 @@
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <!-- LEFT SIDEBAR: Stats (1/3) -->
           <div class="space-y-4">
-            <!-- Status por tipo -->
-            <div class="bg-white dark:bg-gray-900 rounded-lg p-4 border border-gray-200 dark:border-gray-800">
-              <h3 class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-3">Por Status</h3>
-              <div class="space-y-3">
-                <div>
-                  <div class="flex justify-between text-sm mb-1.5">
-                    <span class="text-gray-700 dark:text-gray-300">✓ Sucesso</span>
-                    <span class="font-semibold text-gray-900 dark:text-white" id="status-success-count">--</span>
-                  </div>
-                  <div class="w-full bg-gray-200 dark:bg-gray-700 h-2 rounded-full overflow-hidden">
-                    <div class="bg-green-500 h-2 rounded-full" id="status-success-bar" style="width: 0%"></div>
-                  </div>
-                </div>
-                <div>
-                  <div class="flex justify-between text-sm mb-1.5">
-                    <span class="text-gray-700 dark:text-gray-300">✗ Erro</span>
-                    <span class="font-semibold text-gray-900 dark:text-white" id="status-failed-count">--</span>
-                  </div>
-                  <div class="w-full bg-gray-200 dark:bg-gray-700 h-2 rounded-full overflow-hidden">
-                    <div class="bg-red-500 h-2 rounded-full" id="status-failed-bar" style="width: 0%"></div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
             <!-- Banco de Dados -->
             <div class="bg-white dark:bg-gray-900 rounded-lg p-4 border border-gray-200 dark:border-gray-800">
               <h3 class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-3">Banco de Dados</h3>
@@ -357,6 +359,6 @@
     <div style="font-weight:600; margin-bottom:4px;">Debug (visível)</div>
     <div id="debug-log" style="max-height:120px; overflow:auto; line-height:1.2; opacity:0.95;">Aguardando eventos...</div>
   </div>
-  <script src="js/app.js?v=5"></script>
+  <script src="js/app.js?v=6"></script>
 </body>
 </html>
