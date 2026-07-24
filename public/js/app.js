@@ -237,6 +237,7 @@ function navigateTo(section) {
 
   if (section === "history") loadRuns(true);
   if (section === "settings") syncFormFields();
+  if (section === "run") checkGithubConnection();
   if (section === "dados") {
     if (!dadosInicializado) {
       carregarStats();
@@ -1008,7 +1009,9 @@ async function triggerWorkflow() {
 
 async function triggerWorkflowContratos() {
   const btn = document.getElementById("run-contratos-btn");
+  const errorEl = document.getElementById("error-monitor-contratos");
   if (btn) btn.disabled = true;
+  if (errorEl) { errorEl.classList.add("hidden"); errorEl.innerHTML = ""; }
 
   try {
     await githubApiFetch("/api/github-dispatch-contratos", {
@@ -1024,7 +1027,21 @@ async function triggerWorkflowContratos() {
     }
     startProgressMonitorContratos();
   } catch (err) {
-    toast(`Erro ao iniciar extração de contratos: ${err.message}`, "error");
+    const msg = err.message || "Erro desconhecido";
+    toast(`Erro: ${msg}`, "error");
+    if (errorEl) {
+      errorEl.classList.remove("hidden");
+      errorEl.innerHTML = `
+        <div class="flex items-start gap-3">
+          <span class="text-red-500 text-lg">⚠️</span>
+          <div class="text-sm">
+            <p class="font-semibold text-red-600 mb-1">Falha ao disparar extração</p>
+            <p class="text-red-500">${msg}</p>
+            <p class="text-gray-500 mt-2 text-xs">Verifique se o GITHUB_TOKEN está configurado nas variáveis de ambiente da Vercel.</p>
+          </div>
+        </div>
+      `;
+    }
   } finally {
     if (btn) btn.disabled = false;
   }
@@ -1058,6 +1075,31 @@ async function testConnection() {
     toast(`GitHub conectado: ${cfg.owner}/${cfg.repo}`, "success");
   } catch (err) {
     toast(`Erro ao verificar GitHub: ${err.message}`, "error");
+  }
+}
+
+async function checkGithubConnection() {
+  const statusEl = document.getElementById("github-status");
+  const iconEl = document.getElementById("gh-status-icon");
+  const textEl = document.getElementById("gh-status-text");
+  if (!statusEl || !iconEl || !textEl) return;
+
+  statusEl.classList.remove("hidden");
+  iconEl.className = "w-3 h-3 rounded-full bg-gray-400";
+  textEl.textContent = "Verificando conexão GitHub...";
+
+  try {
+    const data = await githubApiFetch("/api/github-config");
+    if (data.hasToken) {
+      iconEl.className = "w-3 h-3 rounded-full bg-green-500";
+      textEl.textContent = `GitHub conectado: ${data.owner}/${data.repo}`;
+    } else {
+      iconEl.className = "w-3 h-3 rounded-full bg-red-500";
+      textEl.innerHTML = `<strong>Token GitHub não configurado!</strong> Adicione GITHUB_TOKEN nas variáveis de ambiente da Vercel.`;
+    }
+  } catch (err) {
+    iconEl.className = "w-3 h-3 rounded-full bg-red-500";
+    textEl.textContent = `Erro ao verificar GitHub: ${err.message}`;
   }
 }
 
