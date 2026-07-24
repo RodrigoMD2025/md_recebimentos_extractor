@@ -38,10 +38,11 @@ async function handleGet(req, res) {
   const perPage = Math.min(100, Math.max(1, Number(query.per_page) || 50));
   const page = Math.max(1, Number(query.page) || 1);
   const withInputs = query.with_inputs === "true";
+  const workflowId = query.workflow_id || config.workflowId;
 
   try {
     const data = await githubRequest(
-      `/repos/${config.owner}/${config.repo}/actions/workflows/${config.workflowId}/runs?per_page=${perPage}&page=${page}`
+      `/repos/${config.owner}/${config.repo}/actions/workflows/${workflowId}/runs?per_page=${perPage}&page=${page}`
     );
 
     let workflow_runs = data?.workflow_runs || [];
@@ -113,7 +114,7 @@ async function handleGet(req, res) {
     res.status(200).json({
       owner: config.owner,
       repo: config.repo,
-      workflowId: config.workflowId,
+      workflowId: workflowId,
       hasToken: config.hasToken,
       workflow_runs: workflow_runs,
       total_count: data?.total_count || 0,

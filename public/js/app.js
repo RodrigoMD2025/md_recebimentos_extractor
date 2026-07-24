@@ -1021,24 +1021,8 @@ async function triggerWorkflowContratos() {
     const monitor = document.getElementById("active-monitor-contratos");
     if (monitor) {
       monitor.classList.remove("hidden");
-      monitor.innerHTML = `
-        <div class="space-y-3">
-          <div class="flex items-center justify-between text-sm">
-            <span>Extração de contratos em andamento...</span>
-          </div>
-          <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
-            <div class="bg-indigo-500 h-2.5 rounded-full transition-all duration-500" style="width: 50%"></div>
-          </div>
-          <p class="text-xs text-gray-500">Acompanhe o progresso no GitHub Actions ou no histórico de execuções.</p>
-        </div>
-      `;
     }
-
-    setTimeout(() => {
-      if (monitor) {
-        monitor.innerHTML = `<p class="text-sm text-indigo-600">Extração em andamento. Verifique o histórico para conclusão.</p>`;
-      }
-    }, 10000);
+    startProgressMonitorContratos();
   } catch (err) {
     toast(`Erro ao iniciar extração de contratos: ${err.message}`, "error");
   } finally {
@@ -1123,7 +1107,6 @@ function startProgressMonitor(totalJobs) {
 
   progressMonitorInterval = setInterval(async () => {
     try {
-      // Sem with_inputs para manter o polling rápido durante monitoramento
       const data = await githubApiFetch("/api/github-runs", {
         params: { per_page: 1, page: 1 },
       });
@@ -1142,9 +1125,8 @@ function startProgressMonitor(totalJobs) {
           return;
         }
 
-        // Estimar progresso baseado no tempo decorrido
         const elapsed = (Date.now() - startTime) / 1000;
-        const estimatedTotal = totalJobs * 180; // Estimativa de 3 minutos por ano
+        const estimatedTotal = totalJobs * 180;
         const estimatedProgress = Math.min(100, (elapsed / estimatedTotal) * 100);
         updateProgress(estimatedProgress, totalJobs, startTime, elapsed);
       }
@@ -1152,6 +1134,82 @@ function startProgressMonitor(totalJobs) {
       console.error("Erro ao monitorar progresso:", err);
     }
   }, 3000);
+}
+
+let progressMonitorContratosInterval = null;
+
+function startProgressMonitorContratos() {
+  if (progressMonitorContratosInterval) {
+    clearInterval(progressMonitorContratosInterval);
+  }
+
+  const monitorEl = document.getElementById("active-monitor-contratos");
+  if (!monitorEl) return;
+
+  const startTime = Date.now();
+
+  monitorEl.innerHTML = `
+    <div class="space-y-3">
+      <div class="flex items-center justify-between text-sm">
+        <span>Extração de contratos em andamento...</span>
+        <span id="ct-progress-status">aguardando início</span>
+      </div>
+      <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
+        <div id="ct-progress-bar" class="bg-indigo-500 h-2.5 rounded-full transition-all duration-500" style="width: 5%"></div>
+      </div>
+      <div id="ct-progress-info" class="text-xs text-gray-500">Buscando execução no GitHub Actions...</div>
+    </div>
+  `;
+
+  progressMonitorContratosInterval = setInterval(async () => {
+    try {
+      const data = await githubApiFetch("/api/github-runs", {
+        params: { per_page: 1, page: 1, workflow_id: "contratos.yml" },
+      });
+      const latestRun = data?.workflow_runs?.[0];
+
+      if (!latestRun) {
+        document.getElementById("ct-progress-status").textContent = "na fila...";
+        document.getElementById("ct-progress-info").textContent = "Aguardando a execução aparecer no GitHub...";
+        return;
+      }
+
+      const status = latestRun.conclusion || latestRun.status;
+      const statusEl = document.getElementById("ct-progress-status");
+      const infoEl = document.getElementById("ct-progress-info");
+      const barEl = document.getElementById("ct-progress-bar");
+
+      if (status === "success") {
+        statusEl.textContent = "concluído ✅";
+        infoEl.textContent = `Finalizado em ${new Date(latestRun.updated_at).toLocaleString("pt-BR")}`;
+        barEl.style.width = "100%";
+        clearInterval(progressMonitorContratosInterval);
+        setTimeout(() => { monitorEl.classList.add("hidden"); }, 5000);
+        return;
+      }
+
+      if (status === "failure" || status === "cancelled") {
+        statusEl.textContent = status === "failure" ? "falhou ❌" : "cancelado ⚠️";
+        infoEl.textContent = `Verifique o GitHub Actions para detalhes.`;
+        barEl.style.width = "100%";
+        barEl.className = "bg-red-500 h-2.5 rounded-full transition-all duration-500";
+        clearInterval(progressMonitorContratosInterval);
+        setTimeout(() => { monitorEl.classList.add("hidden"); }, 8000);
+        return;
+      }
+
+      if (status === "in_progress" || status === "queued") {
+        statusEl.textContent = status === "in_progress" ? "executando..." : "na fila...";
+        const elapsed = (Date.now() - startTime) / 1000;
+        const progress = Math.min(95, (elapsed / 5400) * 100);
+        barEl.style.width = `${progress}%`;
+        const elapsedMin = Math.floor(elapsed / 60);
+        infoEl.textContent = `Executando há ${elapsedMin} minuto(s)...`;
+      }
+    } catch (err) {
+      console.error("Erro ao monitorar contratos:", err);
+    }
+  }, 5000);
 }
 
 function updateProgress(progress, total, startTime, elapsed) {
