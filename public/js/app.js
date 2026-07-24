@@ -276,6 +276,11 @@ function buildYearTags() {
 
 }
 
+function toggleYearTag(cb, year) {
+  const label = document.getElementById(`ytag-${year}`);
+  label?.classList.toggle("selected", cb.checked);
+}
+
 // Cliente simplificado para chamadas à API do backend usando headers de Auth
 async function githubApiFetch(path, opts = {}) {
   const headers = (opts && opts.headers) || (await Auth.headers());
@@ -1729,8 +1734,6 @@ async function contratosApiFetch(path) {
 
 // =============================================================================
 // CONTRATOS — Variáveis globais
-// Helper para chamadas à API de contratos
-}
 // =============================================================================
 let contratosPagAtual = 1;
 let contratosFiltros = { status: "", contratante: "" };
@@ -1765,8 +1768,6 @@ navigateTo = function(section) {
 
 // =============================================================================
 // CONTRATOS — Carregar alertas (cards)
-// Helper para chamadas à API de contratos
-}
 // =============================================================================
 async function carregarAlertasContratos() {
   try {
@@ -1791,8 +1792,6 @@ async function carregarAlertasContratos() {
 
 // =============================================================================
 // CONTRATOS — Gráfico de vencimentos por mês
-// Helper para chamadas à API de contratos
-}
 // =============================================================================
 async function carregarGraficoContratos() {
   try {
@@ -1870,8 +1869,6 @@ async function carregarGraficoContratos() {
 
 // =============================================================================
 // CONTRATOS — Carregar tabela paginada
-// Helper para chamadas à API de contratos
-}
 // =============================================================================
 async function carregarContratos(page) {
   contratosPagAtual = page || 1;
@@ -1948,8 +1945,6 @@ function limparFiltrosContratos() {
 
 // =============================================================================
 // CONTRATOS — Exportação CSV
-// Helper para chamadas à API de contratos
-}
 // =============================================================================
 function exportarContratosCSV() {
   contratosApiFetch("/api/contratos?limit=10000").then(r => r.json()).then(result => {
@@ -1971,8 +1966,6 @@ function exportarContratosCSV() {
 
 // =============================================================================
 // CONTRATOS — Exportação XLSX
-// Helper para chamadas à API de contratos
-}
 // =============================================================================
 function exportarContratosXLSX() {
   contratosApiFetch("/api/contratos?limit=10000").then(r => r.json()).then(result => {
