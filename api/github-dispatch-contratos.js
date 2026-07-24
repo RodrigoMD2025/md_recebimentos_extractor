@@ -27,12 +27,12 @@ module.exports = async function handler(req, res) {
     const body = req.body || await readJsonBody(req);
 
     await githubRequest(
-      `/repos/${config.owner}/${config.repo}/actions/workflows/contratos.yml/dispatches`,
+      `/repos/${config.owner}/${config.repo}/dispatches`,
       {
         method: "POST",
         body: JSON.stringify({
-          ref: body.ref || "main",
-          inputs: body.inputs || {},
+          event_type: "run-contratos",
+          client_payload: body.inputs || {},
         }),
       }
     );
