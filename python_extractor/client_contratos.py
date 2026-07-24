@@ -29,8 +29,6 @@ URL_LOGIN = "http://sistema.musicdelivery.com.br/login?login_error"
 URL_CONTRATOS = "http://sistema.musicdelivery.com.br/contratos"
 
 MAX_RETRIES = 3
-MAX_FALHAS = 5
-SALVAR_A_CADA = 10
 
 
 async def fazer_login(page):
@@ -102,41 +100,6 @@ async def navegar_pagina(page, url):
                 await asyncio.sleep(espera)
     return False
 
-
-async def obter_total_paginas(page):
-    try:
-        pagination = page.locator("ul.pagination")
-        if await pagination.count() == 0:
-            return 1
-
-        links = pagination.locator("li a")
-        max_page = 1
-
-        for i in range(await links.count()):
-            try:
-                text = (await links.nth(i).inner_text()).strip()
-                href = await links.nth(i).get_attribute("href") or ""
-
-                if text.isdigit():
-                    num = int(text)
-                    if num > max_page:
-                        max_page = num
-
-                if "Última" in text or "Ultima" in text or "→" in text:
-                    if href:
-                        parts = href.rstrip("/").split("/")
-                        last_part = parts[-1] if parts else "0"
-                        if last_part.isdigit():
-                            page_num = (int(last_part) // 30) + 1
-                            if page_num > max_page:
-                                max_page = page_num
-            except Exception:
-                continue
-
-        logging.info(f"Total de páginas: {max_page}")
-        return max_page
-    except Exception:
-        return 1
 
 
 async def salvar_neon(contratos):
@@ -231,58 +194,27 @@ async def main():
             await browser.close()
             return
 
-        total_paginas = await obter_total_paginas(page)
+        logging.info("Extraindo primeira página...")
+        contratos = await extrair_tabela_pagina(page)
+        logging.info(f"  Encontrados: {len(contratos)} contratos")
 
-        todos_contratos = []
         inserts_total = 0
         updates_total = 0
-        falhas_consecutivas = 0
 
-        for pagina in range(1, total_paginas + 1):
-            if falhas_consecutivas >= MAX_FALHAS:
-                logging.error(f"{MAX_FALHAS} falhas seguidas. Parando.")
-                break
-
-            offset = (pagina - 1) * 30
-            url = f"{URL_CONTRATOS}/{offset}"
-
-            logging.info(f"Página {pagina}/{total_paginas} (offset={offset})...")
-
-            if await navegar_pagina(page, url):
-                novos = await extrair_tabela_pagina(page)
-                if novos:
-                    todos_contratos.extend(novos)
-                    falhas_consecutivas = 0
-                    logging.info(f"  OK: {len(novos)} | Total: {len(todos_contratos)}")
-                else:
-                    logging.warning("  Página vazia")
-                    falhas_consecutivas += 1
-            else:
-                falhas_consecutivas += 1
-                logging.error(f"  FALHA página {pagina}")
-
-            # Salvamento periódico no Neon
-            if pagina % SALVAR_A_CADA == 0 and todos_contratos:
-                ins, ups = await salvar_neon(todos_contratos)
-                inserts_total += ins
-                updates_total += ups
-                logging.info(f"  >> Neon: +{ins} inserts, +{ups} updates")
-                todos_contratos = []
-
-            await asyncio.sleep(2)
-
-        # Salvar restante
-        if todos_contratos:
-            ins, ups = await salvar_neon(todos_contratos)
-            inserts_total += ins
-            updates_total += ups
+        if contratos:
+            ins, ups = await salvar_neon(contratos)
+            inserts_total = ins
+            updates_total = ups
+            logging.info(f"  >> Neon: +{ins} inserts, +{ups} updates")
+        else:
+            logging.warning("Nenhum contrato encontrado na primeira página.")
 
         # Relatório final
         now = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         relatorio = (
             f"📋 <b>Extração de Contratos - Concluída</b>\n\n"
             f"🕐 <b>Data:</b> {now}\n"
-            f"📄 <b>Páginas processadas:</b> {total_paginas}\n"
+            f"📄 <b>Páginas processadas:</b> 1 (primeira página)\n"
             f"📥 <b>Novos inserts:</b> {inserts_total}\n"
             f"🔄 <b>Updates:</b> {updates_total}\n"
             f"✅ <b>Total:</b> {inserts_total + updates_total} contratos processados"
