@@ -385,7 +385,7 @@
         <!-- Tabela de Contratos -->
         <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
           <div id="contratos-filtros" class="px-4 py-3 border-b border-gray-200 dark:border-gray-800">
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3 mb-3">
               <div>
                 <label class="block text-xs font-medium text-gray-500 mb-1">Status</label>
                 <select id="filtro-ct-status" class="input-field text-sm">
@@ -397,6 +397,14 @@
               <div>
                 <label class="block text-xs font-medium text-gray-500 mb-1">Contratante</label>
                 <input id="filtro-ct-contratante" class="input-field text-sm" placeholder="Buscar..." />
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-500 mb-1">Período (de)</label>
+                <input id="filtro-ct-data-inicio" type="date" class="input-field text-sm" />
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-500 mb-1">Período (até)</label>
+                <input id="filtro-ct-data-termino" type="date" class="input-field text-sm" />
               </div>
               <div class="flex items-end gap-2">
                 <button onclick="carregarContratos(1)" class="px-4 py-2 text-xs bg-blue-600 text-white rounded-lg">Filtrar</button>

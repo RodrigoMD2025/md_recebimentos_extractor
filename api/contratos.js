@@ -54,6 +54,8 @@ async function handleGet(req, res) {
     semana,
     mes,
     contratante,
+    data_inicio,
+    data_termino,
     page: pageRaw = "1",
     limit: limitRaw = "100",
     order_by: orderByRaw = "data_termino",
@@ -153,6 +155,18 @@ async function handleGet(req, res) {
         params.push(nextMes);
       }
     }
+  }
+
+  if (data_inicio) {
+    conditions.push(`data_termino ~ '^\\d{2}/\\d{2}/\\d{4}$'`);
+    conditions.push(`TO_DATE(data_termino, 'DD/MM/YYYY') >= $${params.length + 1}::date`);
+    params.push(data_inicio);
+  }
+
+  if (data_termino) {
+    conditions.push(`data_termino ~ '^\\d{2}/\\d{2}/\\d{4}$'`);
+    conditions.push(`TO_DATE(data_termino, 'DD/MM/YYYY') <= $${params.length + 1}::date`);
+    params.push(data_termino);
   }
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";

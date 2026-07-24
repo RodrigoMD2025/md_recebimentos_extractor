@@ -1736,7 +1736,7 @@ async function contratosApiFetch(path) {
 // CONTRATOS — Variáveis globais
 // =============================================================================
 let contratosPagAtual = 1;
-let contratosFiltros = { status: "", contratante: "" };
+let contratosFiltros = { status: "", contratante: "", data_inicio: "", data_termino: "" };
 let contratosTotal = 0;
 let contratosTotalPags = 1;
 let contratosInicializado = false;
@@ -1894,6 +1894,8 @@ async function carregarContratos(page) {
 
   contratosFiltros.status = getVal("filtro-ct-status");
   contratosFiltros.contratante = getVal("filtro-ct-contratante").trim();
+  contratosFiltros.data_inicio = getVal("filtro-ct-data-inicio");
+  contratosFiltros.data_termino = getVal("filtro-ct-data-termino");
 
   const loadingEl = document.getElementById("contratos-loading");
   const tableEl = document.getElementById("contratos-table");
@@ -1912,6 +1914,8 @@ async function carregarContratos(page) {
 
     if (contratosFiltros.status) params.set("status", contratosFiltros.status);
     if (contratosFiltros.contratante) params.set("contratante", contratosFiltros.contratante);
+    if (contratosFiltros.data_inicio) params.set("data_inicio", contratosFiltros.data_inicio);
+    if (contratosFiltros.data_termino) params.set("data_termino", contratosFiltros.data_termino);
     if (contratosFiltros.data_termino_mes) params.set("mes", contratosFiltros.data_termino_mes);
 
     const resp = await contratosApiFetch(`/api/contratos?${params.toString()}`);
@@ -1960,9 +1964,11 @@ function mudarPaginaContratos(delta) {
 }
 
 function limparFiltrosContratos() {
-  contratosFiltros = { status: "", contratante: "", data_termino_mes: "" };
+  contratosFiltros = { status: "", contratante: "", data_inicio: "", data_termino: "", data_termino_mes: "" };
   setVal("filtro-ct-status", "");
   setVal("filtro-ct-contratante", "");
+  setVal("filtro-ct-data-inicio", "");
+  setVal("filtro-ct-data-termino", "");
   const lbl = document.getElementById("ct-filtro-mes-label");
   if (lbl) lbl.textContent = "";
   carregarContratos(1);
