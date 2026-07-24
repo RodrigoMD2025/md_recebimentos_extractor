@@ -965,9 +965,8 @@ function bindFiltroEvents() {
 }
 
 async function triggerWorkflow() {
-  const branch = "main"; // Default branch
+  const branch = "main";
 
-  // Obter anos selecionados
   const selectedYears = [];
   document.querySelectorAll("#year-checkboxes input:checked").forEach((cb) => {
     selectedYears.push(cb.value);
@@ -991,18 +990,57 @@ async function triggerWorkflow() {
     });
 
     toast("Workflow iniciado com sucesso! 🚀", "success");
-    
-    // Guardar quais anos foram executados para usá-los no histórico
+
     localStorage.setItem(STORE_KEY_LAST_EXECUCAO, JSON.stringify({
       anos: selectedYears,
       timestamp: new Date().toISOString(),
     }));
-    
+
     document.getElementById("active-monitor")?.classList.remove("hidden");
     startProgressMonitor(selectedYears.length);
-    setTimeout(() => loadRuns(true), 4000); // Recarregar histórico para mostrar a nova execução
+    setTimeout(() => loadRuns(true), 4000);
   } catch (err) {
     toast(`Erro ao iniciar workflow: ${err.message}`, "error");
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function triggerWorkflowContratos() {
+  const btn = document.getElementById("run-contratos-btn");
+  if (btn) btn.disabled = true;
+
+  try {
+    await githubApiFetch("/api/github-dispatch-contratos", {
+      method: "POST",
+      body: { ref: "main", inputs: {} },
+    });
+
+    toast("Extração de contratos iniciada! 🚀", "success");
+
+    const monitor = document.getElementById("active-monitor-contratos");
+    if (monitor) {
+      monitor.classList.remove("hidden");
+      monitor.innerHTML = `
+        <div class="space-y-3">
+          <div class="flex items-center justify-between text-sm">
+            <span>Extração de contratos em andamento...</span>
+          </div>
+          <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
+            <div class="bg-indigo-500 h-2.5 rounded-full transition-all duration-500" style="width: 50%"></div>
+          </div>
+          <p class="text-xs text-gray-500">Acompanhe o progresso no GitHub Actions ou no histórico de execuções.</p>
+        </div>
+      `;
+    }
+
+    setTimeout(() => {
+      if (monitor) {
+        monitor.innerHTML = `<p class="text-sm text-indigo-600">Extração em andamento. Verifique o histórico para conclusão.</p>`;
+      }
+    }, 10000);
+  } catch (err) {
+    toast(`Erro ao iniciar extração de contratos: ${err.message}`, "error");
   } finally {
     if (btn) btn.disabled = false;
   }

@@ -263,16 +263,24 @@
       </section>
 
       <section id="section-run" class="section-content hidden">
-              <div class="max-w-2xl mx-auto space-y-4">
-              <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
-              <label class="block text-sm font-medium mb-2">Ano para Processar</label>
-              <div id="year-checkboxes" class="flex flex-wrap gap-2 mb-3"></div>
+        <div class="max-w-2xl mx-auto space-y-4">
+          <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
+            <label class="block text-sm font-medium mb-2">Ano para Processar</label>
+            <div id="year-checkboxes" class="flex flex-wrap gap-2 mb-3"></div>
 
-              <button id="run-btn" onclick="triggerWorkflow()" class="w-full py-3 bg-blue-600 text-white rounded-xl">Iniciar Extração</button>
-              </div>
-              <div id="active-monitor" class="hidden bg-white dark:bg-gray-900 rounded-xl border border-blue-200 dark:border-blue-800 p-4">Execução em andamento...</div>
-              </div>
-              </section>
+            <button id="run-btn" onclick="triggerWorkflow()" class="w-full py-3 bg-blue-600 text-white rounded-xl">Iniciar Extração</button>
+          </div>
+
+          <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
+            <label class="block text-sm font-medium mb-2">Contratos</label>
+            <p class="text-xs text-gray-500 mb-3">Extrair contratos do sistema externo e atualizar a base de dados.</p>
+            <button id="run-contratos-btn" onclick="triggerWorkflowContratos()" class="w-full py-3 bg-indigo-600 text-white rounded-xl">Extrair Contratos</button>
+          </div>
+
+          <div id="active-monitor" class="hidden bg-white dark:bg-gray-900 rounded-xl border border-blue-200 dark:border-blue-800 p-4">Execução em andamento...</div>
+          <div id="active-monitor-contratos" class="hidden bg-white dark:bg-gray-900 rounded-xl border border-indigo-200 dark:border-indigo-800 p-4">Execução de contratos em andamento...</div>
+        </div>
+      </section>
 
               <section id="section-history" class="section-content hidden">
               <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
