@@ -1771,20 +1771,30 @@ navigateTo = function(section) {
 // =============================================================================
 async function carregarAlertasContratos() {
   try {
+    const hoje = new Date();
+    const dia = hoje.getDay();
+    const domingo = new Date(hoje);
+    domingo.setDate(hoje.getDate() - dia);
+    const sabado = new Date(domingo);
+    sabado.setDate(domingo.getDate() + 6);
+    const fmt = (d) => d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+    const labelEl = document.getElementById("alerta-semana-label");
+    if (labelEl) labelEl.textContent = `Esta Semana (${fmt(domingo)} a ${fmt(sabado)})`;
+
+    const respSemana = await contratosApiFetch("/api/contratos?semana=1");
+    if (respSemana.ok) {
+      const resultSemana = await respSemana.json();
+      setTxt("alerta-semana", Number(resultSemana.data?.[0]?.total || 0));
+    }
+
     const resp = await contratosApiFetch("/api/contratos?alerta=1");
     if (!resp.ok) return;
     const result = await resp.json();
     const alertas = result.data || [];
 
-    const vencidos = alertas.filter(a => a.alerta === "Vencido").length;
-    const em30 = alertas.filter(a => a.alerta === "Vence em 30 dias").length;
-    const em60 = alertas.filter(a => a.alerta === "Vence em 60 dias").length;
-    const em90 = alertas.filter(a => a.alerta === "Vence em 90 dias").length;
-
-    setTxt("alerta-vencidos", vencidos);
-    setTxt("alerta-30", em30);
-    setTxt("alerta-60", em60);
-    setTxt("alerta-90", em90);
+    setTxt("alerta-30", alertas.filter(a => a.alerta === "Vence em 30 dias").length);
+    setTxt("alerta-60", alertas.filter(a => a.alerta === "Vence em 60 dias").length);
+    setTxt("alerta-90", alertas.filter(a => a.alerta === "Vence em 90 dias").length);
   } catch (e) {
     console.error("[contratos] Erro ao carregar alertas:", e);
   }
@@ -1836,6 +1846,15 @@ async function carregarGraficoContratos() {
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        onClick: (e, elements) => {
+          if (elements.length === 0) return;
+          const idx = elements[0].index;
+          const mesLabel = labels[idx];
+          contratosFiltros.data_termino_mes = contratosFiltros.data_termino_mes === mesLabel ? "" : mesLabel;
+          const lbl = document.getElementById("ct-filtro-mes-label");
+          if (lbl) lbl.textContent = contratosFiltros.data_termino_mes ? `Mês: ${contratosFiltros.data_termino_mes}` : "";
+          carregarContratos(1);
+        },
         plugins: {
           legend: { display: false },
           tooltip: {
@@ -1873,6 +1892,9 @@ async function carregarGraficoContratos() {
 async function carregarContratos(page) {
   contratosPagAtual = page || 1;
 
+  contratosFiltros.status = getVal("filtro-ct-status");
+  contratosFiltros.contratante = getVal("filtro-ct-contratante").trim();
+
   const loadingEl = document.getElementById("contratos-loading");
   const tableEl = document.getElementById("contratos-table");
   const tbody = document.getElementById("contratos-tbody");
@@ -1885,11 +1907,12 @@ async function carregarContratos(page) {
       page: contratosPagAtual,
       limit: 50,
       order_by: "data_termino",
-      order_dir: "ASC",
+      order_dir: "DESC",
     });
 
     if (contratosFiltros.status) params.set("status", contratosFiltros.status);
     if (contratosFiltros.contratante) params.set("contratante", contratosFiltros.contratante);
+    if (contratosFiltros.data_termino_mes) params.set("mes", contratosFiltros.data_termino_mes);
 
     const resp = await contratosApiFetch(`/api/contratos?${params.toString()}`);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -1937,9 +1960,11 @@ function mudarPaginaContratos(delta) {
 }
 
 function limparFiltrosContratos() {
-  contratosFiltros = { status: "", contratante: "" };
+  contratosFiltros = { status: "", contratante: "", data_termino_mes: "" };
   setVal("filtro-ct-status", "");
   setVal("filtro-ct-contratante", "");
+  const lbl = document.getElementById("ct-filtro-mes-label");
+  if (lbl) lbl.textContent = "";
   carregarContratos(1);
 }
 

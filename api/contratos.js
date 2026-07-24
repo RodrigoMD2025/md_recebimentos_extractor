@@ -51,19 +51,41 @@ async function handleGet(req, res) {
   const {
     status,
     alerta,
+    semana,
+    mes,
     contratante,
     page: pageRaw = "1",
     limit: limitRaw = "100",
     order_by: orderByRaw = "data_termino",
-    order_dir: orderDirRaw = "ASC",
+    order_dir: orderDirRaw = "DESC",
   } = req.query || parseQuery(req.url);
 
   const page = Math.max(1, parseInt(pageRaw, 10) || 1);
   const limit = Math.min(500, Math.max(1, parseInt(limitRaw, 10) || 100));
   const offset = (page - 1) * limit;
 
-  const orderBy = ORDER_BY_WHITELIST.has(orderByRaw) ? orderByRaw : "data_termino";
-  const orderDir = orderDirRaw.toUpperCase() === "DESC" ? "DESC" : "ASC";
+  const orderByRawSafe = ORDER_BY_WHITELIST.has(orderByRaw) ? orderByRaw : "data_termino";
+  const orderDir = orderDirRaw.toUpperCase() === "ASC" ? "ASC" : "DESC";
+  const orderExpr = orderByRawSafe === "data_termino"
+    ? `CASE WHEN data_termino ~ '^\\d{2}/\\d{2}/\\d{4}$' THEN TO_DATE(data_termino, 'DD/MM/YYYY') END ${orderDir} NULLS LAST, CASE WHEN data_termino !~ '^\\d{2}/\\d{2}/\\d{4}$' THEN data_termino END ${orderDir} NULLS LAST`
+    : `${orderByRawSafe} ${orderDir}`;
+
+  // Rota especial: /api/contratos?semana=1 retorna contratos vencendo esta semana (dom-sab)
+  if (String(req.query?.semana) === "1") {
+    try {
+      const weekResult = await query(`
+        SELECT COUNT(*) AS total FROM contratos
+        WHERE status = 'Ativo'
+          AND data_termino ~ '^\\d{2}/\\d{2}/\\d{4}$'
+          AND TO_DATE(data_termino, 'DD/MM/YYYY') >= CURRENT_DATE - EXTRACT(DOW FROM CURRENT_DATE)::INT
+          AND TO_DATE(data_termino, 'DD/MM/YYYY') <= CURRENT_DATE - EXTRACT(DOW FROM CURRENT_DATE)::INT + 6
+      `, []);
+      return res.status(200).json({ data: weekResult.rows });
+    } catch (dbErr) {
+      console.error("[contratos] Erro ao buscar semana:", dbErr);
+      return res.status(500).json({ error: "Erro interno ao consultar semana." });
+    }
+  }
 
   // Rota especial: /api/contratos?alerta=1 retorna apenas a view de alertas
   if (String(alerta) === "1" || String(alerta) === "true") {
@@ -117,6 +139,22 @@ async function handleGet(req, res) {
     conditions.push(`contratante ILIKE $${params.length}`);
   }
 
+  if (mes) {
+    const parts = mes.split("/");
+    if (parts.length === 2) {
+      const ano = parseInt(parts[1], 10);
+      const mesNum = parseInt(parts[0], 10);
+      if (ano > 2000 && mesNum >= 1 && mesNum <= 12) {
+        conditions.push(`data_termino ~ '^\\d{2}/\\d{2}/\\d{4}$'`);
+        conditions.push(`TO_DATE(data_termino, 'DD/MM/YYYY') >= $${params.length + 1}`);
+        conditions.push(`TO_DATE(data_termino, 'DD/MM/YYYY') < $${params.length + 2}`);
+        params.push(`${ano}-${String(mesNum).padStart(2, "0")}-01`);
+        const nextMes = mesNum === 12 ? `${ano + 1}-01-01` : `${ano}-${String(mesNum + 1).padStart(2, "0")}-01`;
+        params.push(nextMes);
+      }
+    }
+  }
+
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
   try {
@@ -128,7 +166,7 @@ async function handleGet(req, res) {
       SELECT ${SELECT_FIELDS}
       FROM contratos
       ${whereClause}
-      ORDER BY ${orderBy} ${orderDir}
+      ORDER BY ${orderExpr}
       LIMIT $${params.length + 1} OFFSET $${params.length + 2}
     `;
     const dataResult = await query(dataSql, [...params, limit, offset]);
