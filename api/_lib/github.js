@@ -1,6 +1,6 @@
 const GH_API = "https://api.github.com";
 const DEFAULT_OWNER = "RodrigoMD2025";
-const DEFAULT_REPO = "md_extractor";
+const DEFAULT_REPO = "md_recebimentos_extractor";
 const DEFAULT_WORKFLOW_ID = "recebimentos.yml";
 
 function getGithubConfig() {
