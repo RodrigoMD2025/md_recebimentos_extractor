@@ -1,272 +1,176 @@
-# 🧑🏻‍💻​ MD Recebimentos Extractor
+# 🧑🏻‍💻​ MD Extractor
 
-Automação completa para extração de dados de recebimentos do sistema usando GitHub Actions, com processamento de múltiplos anos e notificações via Telegram.
+Automação completa para extração de dados do sistema Music Delivery, incluindo **Recebimentos** e **Contratos**, com dashboard web, GitHub Actions e notificações via Telegram.
 
 ## 🚀 Características Principais
 
 - ✅ **Extração Automática**: Login e navegação automatizada no sistema
-- ✅ **Processamento Multi-Ano**: Execução em paralelo para os anos
-- ✅ **Análise Detalhada**: Extração de playlists, períodos e contagem de faixas
+- ✅ **Recebimentos**: Extração de parcelas com análise de playlists
+- ✅ **Contratos**: Extração completa com alertas de vencimento
+- ✅ **Dashboard Web**: Interface moderna com gráficos e filtros
+- ✅ **Processamento Multi-Ano**: Execução em paralelo para recebimentos
 - ✅ **Sistema de Retry**: Tentativas automáticas para links com falha
-- ✅ **Notificações Telegram**: Relatórios detalhados e arquivos Excel
-- ✅ **Logs Completos**: Monitoramento detalhado de cada etapa
-- ✅ **Tratamento de Erros**: Notificações automáticas em caso de falha
+- ✅ **Notificações Telegram**: Relatórios detalhados
+- ✅ **Banco de Dados**: Neon PostgreSQL com views para alertas
 
 ## 📋 Estrutura do Projeto
 
 ```
-projeto-recebimentos/
+md_extractor/
 ├── .github/
 │   └── workflows/
-│       └── recebimentos.yml       # Workflow do GitHub Actions
-├── client_recebimentos.py         # Script principal de extração
-├── requirements.txt               # Dependências Python
-└── README.md                      # Este arquivo
+│       ├── recebimentos.yml       # Workflow de extração de recebimentos
+│       └── contratos.yml          # Workflow de extração de contratos
+├── api/                           # Backend Vercel (serverless functions)
+│   ├── _lib/
+│   │   ├── auth.js                # Firebase Admin Auth
+│   │   ├── db.js                  # Conexão PostgreSQL (Neon)
+│   │   └── github.js              # Cliente GitHub API
+│   ├── recebimentos.js            # GET/DELETE /api/recebimentos
+│   ├── contratos.js               # GET/DELETE /api/contratos
+│   ├── stats.js                   # GET /api/stats
+│   └── ...
+├── public/                        # Frontend SPA (Vercel)
+│   ├── index.html                 # Dashboard principal
+│   ├── login.html                 # Página de login
+│   ├── css/style.css              # Estilos customizados
+│   └── js/
+│       ├── app.js                 # Lógica principal
+│       ├── auth.js                # Firebase Auth
+│       └── firebase-init.js       # Firebase SDK
+├── python_extractor/
+│   ├── client_recebimentos.py     # Extrator de recebimentos
+│   ├── client_contratos.py        # Extrator de contratos
+│   └── requirements.txt           # Dependências Python
+├── sql/
+│   └── schema.sql                 # Schema PostgreSQL
+└── README.md
 ```
 
-## ⚙️ Configuração Inicial
+## ⚙️ Configuração
 
 ### 1. Secrets do Repositório
 
-Configure os seguintes secrets em `Settings > Secrets and variables > Actions`:
+| Secret | Descrição |
+|--------|-----------|
+| `BOT_TOKEN` | Token do bot Telegram |
+| `CLIENT_EMAIL` | Email de login do sistema MD |
+| `CLIENT_SENHA` | Senha do sistema MD |
+| `DEFAULT_CHAT_ID` | Chat ID padrão do Telegram |
+| `DATABASE_URL` | Connection string do Neon PostgreSQL |
+| `GITHUB_TOKEN` | Token de acesso ao GitHub |
+| `FIREBASE_SERVICE_ACCOUNT` | JSON do service account Firebase |
 
-| Secret | Descrição | Obrigatório |
-|--------|-----------|-------------|
-| `BOT_TOKEN` | Token do bot do Telegram | ✅ |
-| `CLIENT_EMAIL` | Email de login do sistema MD | ✅ |
-| `CLIENT_SENHA` | Senha do sistema MD | ✅ |
-| `DEFAULT_CHAT_ID` | Chat ID padrão do Telegram | ✅ |
+### 2. Deploy no Vercel
 
-### 2. Configuração do Bot Telegram
+1. Conecte o repositório ao Vercel
+2. Configure as variáveis de ambiente
+3. Deploy automático a cada push
 
-1. Crie um bot conversando com [@BotFather](https://t.me/BotFather)
-2. Obtenha o token do bot
-3. Obtenha seu Chat ID conversando com [@userinfobot](https://t.me/userinfobot)
+## 🎯 Módulos
 
-## 🎯 Como Executar
+### 📊 Recebimentos
 
-### Execução Manual (Recomendado)
-
-1. Acesse a aba **Actions** do seu repositório
-2. Selecione **"Recebimentos MD"**
-3. Clique em **"Run workflow"**
-4. (Opcional) Insira um Chat ID específico
-5. Clique em **"Run workflow"**
-
-### Execução via API
+Extração de parcelas de royalties com análise de playlists.
 
 ```bash
-curl -X POST \
-  -H "Accept: application/vnd.github.v3+json" \
-  -H "Authorization: token SEU_GITHUB_TOKEN" \
-  https://api.github.com/repos/SEU_USUARIO/SEU_REPO/dispatches \
-  -d '{
-    "event_type": "run-recebimentos",
-    "client_payload": {
-      "chat_id": "123456789"
-    }
-  }'
+# Extração via GitHub Actions
+# Workflow: recebimentos.yml
+# Inputs: anos (ex: "2024,2025")
 ```
 
-### Execução Agendada (Opcional)
+### 📋 Contratos
 
-Para ativar execução automática, adicione ao workflow:
+Extração de contratos com alertas de vencimento.
 
-```yaml
-on:
-  schedule:
-    - cron: '0 9 1 * *'  # Todo dia 1º do mês às 9h UTC
+```bash
+# Extração via GitHub Actions
+# Workflow: contratos.yml
+# Inputs: chat_id (opcional)
 ```
 
-## 📊 Dados Extraídos
+**Dados extraídos:**
+- Código do contrato
+- Contratante
+- Alias/Matriz
+- Data de início e término
+- Forma de envio
+- Status (Ativo/Inativo)
 
-### Informações Principais
-- **Contratante**: Nome do contratante
-- **Código de Contrato**: Identificador único
-- **Vencimento**: Data de vencimento
-- **Valor Parcela**: Valor a receber
-- **Status**: Status do pagamento
-- **Pago Em**: Data do pagamento
+**Alertas de vencimento:**
+- Contratos vencidos
+- Vencimento em 30 dias
+- Vencimento em 60 dias
+- Vencimento em 90 dias
 
-### Análise de Playlists
-- **Status Playlist**: Com/Sem playlist
-- **Playlists**: Nomes das playlists relacionadas
-- **Período**: Período de referência
-- **Faixas**: Quantidade de faixas musicais
+## 📊 API Endpoints
 
-## 📈 Relatórios Gerados
+### Recebimentos
+- `GET /api/recebimentos` - Listar com filtros e paginação
+- `DELETE /api/recebimentos` - Excluir registros
 
-### 1. Arquivo Excel
-- Nome: `relatorio_consolidado_YYYY.xlsx`
-- Enviado automaticamente via Telegram
-- Contém todos os dados extraídos
+### Contratos
+- `GET /api/contratos` - Listar com filtros
+- `GET /api/contratos?alerta=1` - Contratos vencendo em 90 dias
+- `GET /api/contratos?grafico=1` - Vencimentos por mês
+- `GET /api/contratos?stats=1` - Estatísticas (total/ativos/inativos)
+- `DELETE /api/contratos` - Excluir registros
 
-### 2. Relatório de Estatísticas
+### Geral
+- `GET /api/stats` - Estatísticas de recebimentos
 
-```
-🤖 RELATÓRIO AUTOMÁTICO - RECEBIMENTOS
+## 🗄️ Banco de Dados
 
-📅 Data/Hora: 29/07/2025 às 14:30:00
-📊 Ano do Relatório: 2024
-⏱️ Tempo de Execução: 0:15:30
+### Tabelas
 
-📋 DADOS EXTRAÍDOS:
-• Total de registros: 1,250
-• Registros com links: 980
-• Registros sem links: 270
+- `recebimentos` - Parcelas de royalties
+- `contratos` - Contratos extraídos
 
-🔗 PROCESSAMENTO DE LINKS:
-• ✅ Processados com sucesso: 945
-• ❌ Links com erro: 35
-• 📊 Taxa de sucesso: 96.4%
+### Views
 
-🎵 ANÁLISE DE PLAYLISTS:
-• Com Playlist: 720
-• Sem Playlist: 225
+- `v_stats_por_ano` - Estatísticas por ano
+- `v_status_distribuicao` - Distribuição por status
+- `v_contratos_alerta` - Contratos vencendo em 90 dias
+- `v_contratos_por_mes` - Vencimentos por mês
 
-🚀 Relatório gerado automaticamente via GitHub Actions
-```
+## 📱 Frontend
 
-## 🔧 Configurações Avançadas
+Dashboard SPA com:
 
-### Modificar Anos Processados
-
-Edite o arquivo `.github/workflows/recebimentos.yml`:
-
-```yaml
-strategy:
-  matrix:
-    ano: ["2022", "2023", "2024", "2025"]  # Adicione novos anos aqui
-```
-
-### Ajustar Timeouts
-
-No arquivo `client_recebimentos.py`:
-
-```python
-timeouts = [60000, 90000, 120000]  # 1min, 1.5min, 2min
-```
-
-### Modificar Ano Padrão
-
-```python
-parser.add_argument('--ano', type=str, default="2025", help="Ano do relatório")
-```
-
-## 🚨 Tratamento de Erros
-
-### Sistema de Retry
-- **1ª Tentativa**: Timeout de 60 segundos
-- **2ª Tentativa**: Timeout de 90 segundos
-- **3ª Tentativa**: Timeout de 120 segundos
-
-### Notificações de Erro
-```
-🚨 ERRO - EXTRAÇÃO RECEBIMENTOS
-
-❌ Erro: Falha no login - verifique credenciais
-🕐 Timestamp: 29/07/2025 às 14:15:30
-🔧 Origem: GitHub Actions
-
-Verifique os logs para mais detalhes
-```
-
-### Upload de Logs
-Em caso de falha, os logs são automaticamente salvos como artefatos do GitHub Actions com retenção de 7 dias.
-
-## 📝 Logs e Monitoramento
-
-### Níveis de Log
-- **INFO**: Progresso normal da execução
-- **WARNING**: Problemas não críticos
-- **ERROR**: Erros que impedem a execução
-
-### Exemplo de Log
-```
-2025-07-29 14:30:15 - INFO - 🤖 Iniciando extração de recebimentos...
-2025-07-29 14:30:20 - INFO - ✅ Login realizado com sucesso
-2025-07-29 14:30:25 - INFO - Carregando dados do ano 2024...
-2025-07-29 14:35:10 - INFO - ✅ Extração concluída: 1,250 registros coletados
-2025-07-29 14:45:30 - INFO - 🎉 Processo concluído com sucesso!
-```
-
-## 🛠️ Dependências
-
-```txt
-pandas>=2.0.0           # Manipulação de dados
-playwright>=1.40.0      # Automação web
-beautifulsoup4>=4.12.0  # Parse HTML
-tqdm>=4.65.0            # Barras de progresso
-aiohttp>=3.8.0          # Cliente HTTP assíncrono
-aiofiles>=23.0.0        # Operações de arquivo assíncronas
-openpyxl>=3.1.0         # Manipulação de Excel
-```
-
-## 🔒 Segurança
-
-- ✅ Credenciais armazenadas como secrets
-- ✅ Logs não expõem informações sensíveis
-- ✅ Arquivos temporários são automaticamente removidos
-- ✅ Comunicação via HTTPS
-- ✅ Token do Telegram com escopo limitado
+- **Dashboard**: Gráficos de recebimentos e execuções
+- **Executar**: Trigger de extrações via GitHub Actions
+- **Histórico**: Log de todas as execuções
+- **Dados**: Navegação por dados de recebimentos
+- **Contratos**: Alertas de vencimento, gráfico por mês, tabela completa
+- **Configurações**: Repo GitHub, Firebase, API
 
 ## 🐛 Solução de Problemas
 
 ### Erro de Login
-```bash
-❌ Falha no login - verifique credenciais
-```
-**Solução**: Verifique se `CLIENT_EMAIL` e `CLIENT_SENHA` estão corretos nos secrets.
+Verifique `CLIENT_EMAIL` e `CLIENT_SENHA` nos secrets.
 
-### Erro de Telegram
-```bash
-❌ BOT_TOKEN não configurado
-```
-**Solução**: Configure o secret `BOT_TOKEN` com o token do seu bot.
+### Timeout
+Workflows têm timeout de 60-90 minutos. Divida o processamento se necessário.
 
-### Timeout de Execução
-```bash
-Error: The operation was canceled.
-```
-**Solução**: O workflow tem timeout de 60 minutos. Para muitos dados, considere aumentar ou dividir o processamento.
+### Banco de Dados
+Execute o `sql/schema.sql` para criar/atualizar tabelas e views.
 
-## 📞 Suporte
+## 🆕 Atualizações
 
-Para problemas ou sugestões:
-1. Verifique os logs do GitHub Actions
-2. Consulte as mensagens de erro no Telegram
-3. Analise os artefatos salvos em caso de falha
-
-## 🆕 Atualizações Recentes
+### v3.0 - Contratos & Dashboard (Julho 2026)
+- ✅ **Módulo de Contratos**: Extração e análise de contratos
+- ✅ **Alertas de Vencimento**: 30, 60, 90 dias
+- ✅ **Gráfico de Vencimentos**: Por mês
+- ✅ **Renomeação**: Projeto renomeado para md_extractor
 
 ### v2.1 - Dashboard & History UI (Maio 2026)
-- ✅ **Interface de Histórico**: Dropdown para exibição de anos selecionados por execução
-- ✅ **Coluna "Anos"**: Adicionada à tabela de histórico do dashboard
-- ✅ **Estilo melhorado**: Cores de font corrigidas em opções de dropdown
-- ✅ **Compatibilidade Vercel**: App preparado para deploy local via pasta `public`
-- 🔁 **Fonte única de verdade**: o app é servido a partir de `public/`; a pasta `docs/` contém cópias de referência e não é o diretório de deploy.
- - ✅ **Atualização 19/05/2026**: Exibição dos dados do *último* resumo de execução no Dashboard (Último Registro, Pagos, Pendentes, Com Playlist); botão `Aplicar` adicionado ao menu `Dados` para validar filtros; exclusão de execução propaga remoção dos dados no banco e atualiza estatísticas.
+- ✅ Interface de histórico com dropdown de anos
+- ✅ Exibição de dados da última execução no Dashboard
 
-### v2.0 - Multi-Year Support & Dashboard (Abril 2026)
-- ✅ **Suporte Multi-Ano**: Coluna YEAR adicionada ao dashboard
-- ✅ **Barra de Progresso**: Feedback visual durante processamento
-- ✅ **Suporte a Anos no Workflow**: GitHub Actions agora suporta múltiplos anos
-- ✅ **Estrutura Reorganizada**: Python extractor movido para `python_extractor/`
-- ✅ **Tratamento de NaN**: Handling robusto com `pd.isna()` antes de inserção no banco
-- ✅ **Configuração Firebase**: Atualizada no login
-- ✅ **Página de Login**: Integrada ao frontend público
-
-### v1.0 - Extração & Notificações (2025)
-- ✅ **Automação Completa**: Extração via browser automation (Playwright)
-- ✅ **Multi-Ano**: Processamento em paralelo de múltiplos anos
-- ✅ **Notificações Telegram**: Relatórios detalhados e arquivos Excel
-- ✅ **Sistema de Retry**: Tentativas automáticas com backoff
-- ✅ **Logs Estruturados**: Monitoramento detalhado de cada etapa
-
-## 📄 Licença
-
-Este projeto é de uso interno e contém informações proprietárias do sistema MD.
+### v2.0 - Multi-Year Support (Abril 2026)
+- ✅ Suporte multi-ano para recebimentos
+- ✅ Estrutura reorganizada
 
 ---
 
-*Última atualização: Maio 2026*
+*Última atualização: Julho 2026*

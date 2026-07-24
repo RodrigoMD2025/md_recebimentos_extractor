@@ -1,0 +1,88 @@
+name: Contratos MD
+run-name: "Contratos MD - Extração de contratos"
+
+on:
+  workflow_dispatch:
+    inputs:
+      chat_id:
+        description: "Chat ID do Telegram (opcional - usa padrão se vazio)"
+        required: false
+        default: ""
+        type: string
+
+  repository_dispatch:
+    types: [run-contratos]
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  extrair-contratos:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Instalar dependências do sistema
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libnss3-dev \
+            libatk-bridge2.0-dev \
+            libdrm2 \
+            libxss1 \
+            libxrandr2 \
+            libasound2-dev \
+            libpangocairo-1.0-0 \
+            libgtk-3-dev
+
+      - name: Instalar dependências Python
+        run: |
+          pip install --upgrade pip
+          pip install -r python_extractor/requirements.txt
+          playwright install chromium
+
+      - name: Definir Chat ID
+        id: chat-setup
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.chat_id }}" ]; then
+            echo "CHAT_ID=${{ github.event.inputs.chat_id }}" >> $GITHUB_ENV
+          elif [ "${{ github.event_name }}" = "repository_dispatch" ] && [ -n "${{ github.event.client_payload.chat_id }}" ]; then
+            echo "CHAT_ID=${{ github.event.client_payload.chat_id }}" >> $GITHUB_ENV
+          else
+            echo "CHAT_ID=${{ secrets.DEFAULT_CHAT_ID }}" >> $GITHUB_ENV
+          fi
+
+      - name: Executar extração de contratos
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CLIENT_EMAIL: ${{ secrets.CLIENT_EMAIL }}
+          CLIENT_SENHA: ${{ secrets.CLIENT_SENHA }}
+          DEFAULT_CHAT_ID: ${{ secrets.DEFAULT_CHAT_ID }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GITHUB_RUN_ID: ${{ github.run_number }}
+        run: |
+          cd python_extractor && python client_contratos.py
+
+      - name: Upload de logs em caso de erro
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-contratos-${{ github.run_number }}
+          path: |
+            python_extractor/log_contratos.log
+          retention-days: 7
+
+      - name: Limpeza de arquivos temporários
+        if: always()
+        run: |
+          rm -f *.log
+          echo "Arquivos temporários removidos"

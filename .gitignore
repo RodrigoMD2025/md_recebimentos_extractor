@@ -24,3 +24,8 @@ node_modules/
 .vercel
 .env*.local
 zed_chats/
+
+# local test / logs
+server_local.js
+log_*.log
+opencode.json

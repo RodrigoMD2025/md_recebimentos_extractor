@@ -354,3 +354,15 @@ tbody tr:hover { background: rgba(0,0,0,.025); }
 
 /* ── Overflow break para células de tabela ── */
 td { max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── Contratos alert cards ── */
+#section-contratos .bg-white {
+    transition: transform .2s ease, box-shadow .2s ease;
+}
+#section-contratos .bg-white:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0,0,0,.06);
+}
+.dark #section-contratos .bg-white:hover {
+    box-shadow: 0 6px 16px rgba(0,0,0,.18);
+}

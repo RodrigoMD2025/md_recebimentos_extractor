@@ -11,7 +11,7 @@ const STORE_KEY_LAST_EXECUCAO = "md_rcb_last_execucao_anos"; // Guarda anos da �
 
 let cfg = {
   owner: "RodrigoMD2025",
-  repo: "md_recebimentos_extractor",
+  repo: "md_extractor",
   workflowId: WORKFLOW_ID,
   hasGithubToken: false,
   years: ["2024", "2025"],
@@ -1040,7 +1040,7 @@ function clearSettings() {
   localStorage.removeItem("theme");
   cfg = {
     owner: "RodrigoMD2025",
-    repo: "md_recebimentos_extractor",
+    repo: "md_extractor",
     workflowId: WORKFLOW_ID,
     hasGithubToken: false,
     years: ["2024", "2025"],
@@ -1718,4 +1718,280 @@ function setVal(id, v) {
 function setTxt(id, v) {
   const el = document.getElementById(id);
   if (el) el.textContent = v;
+}
+
+// Helper para chamadas à API de contratos
+async function contratosApiFetch(path) {
+  const headers = await Auth.headers();
+  const url = buildApiUrl(path);
+  return fetch(url, { headers });
+}
+
+// =============================================================================
+// CONTRATOS — Variáveis globais
+// Helper para chamadas à API de contratos
+}
+// =============================================================================
+let contratosPagAtual = 1;
+let contratosFiltros = { status: "", contratante: "" };
+let contratosTotal = 0;
+let contratosTotalPags = 1;
+let contratosInicializado = false;
+let chartContratosMes = null;
+
+// Atualizar navigateTo para incluir contratos
+const _originalNavigateTo = navigateTo;
+navigateTo = function(section) {
+  _originalNavigateTo(section);
+
+  const titles = {
+    dashboard: "Dashboard",
+    run: "Executar Extração",
+    history: "Histórico",
+    dados: "Dados",
+    contratos: "Contratos",
+    settings: "Configurações",
+  };
+  const titleEl = document.getElementById("page-title");
+  if (titleEl) titleEl.textContent = titles[section] || section;
+
+  if (section === "contratos" && !contratosInicializado) {
+    carregarAlertasContratos();
+    carregarGraficoContratos();
+    carregarContratos(1);
+    contratosInicializado = true;
+  }
+};
+
+// =============================================================================
+// CONTRATOS — Carregar alertas (cards)
+// Helper para chamadas à API de contratos
+}
+// =============================================================================
+async function carregarAlertasContratos() {
+  try {
+    const resp = await contratosApiFetch("/api/contratos?alerta=1");
+    if (!resp.ok) return;
+    const result = await resp.json();
+    const alertas = result.data || [];
+
+    const vencidos = alertas.filter(a => a.alerta === "Vencido").length;
+    const em30 = alertas.filter(a => a.alerta === "Vence em 30 dias").length;
+    const em60 = alertas.filter(a => a.alerta === "Vence em 60 dias").length;
+    const em90 = alertas.filter(a => a.alerta === "Vence em 90 dias").length;
+
+    setTxt("alerta-vencidos", vencidos);
+    setTxt("alerta-30", em30);
+    setTxt("alerta-60", em60);
+    setTxt("alerta-90", em90);
+  } catch (e) {
+    console.error("[contratos] Erro ao carregar alertas:", e);
+  }
+}
+
+// =============================================================================
+// CONTRATOS — Gráfico de vencimentos por mês
+// Helper para chamadas à API de contratos
+}
+// =============================================================================
+async function carregarGraficoContratos() {
+  try {
+    const resp = await contratosApiFetch("/api/contratos?grafico=1");
+    if (!resp.ok) return;
+    const result = await resp.json();
+    const dados = result.data || [];
+
+    const canvas = document.getElementById("chart-contratos-mes");
+    const emptyEl = document.getElementById("chart-contratos-mes-empty");
+
+    if (!dados.length) {
+      if (emptyEl) emptyEl.classList.remove("hidden");
+      return;
+    }
+    if (emptyEl) emptyEl.classList.add("hidden");
+
+    const labels = dados.map(d => d.mes_label);
+    const values = dados.map(d => Number(d.total));
+
+    if (chartContratosMes) chartContratosMes.destroy();
+
+    const isDark = document.documentElement.classList.contains("dark");
+
+    chartContratosMes = new Chart(canvas, {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [{
+          label: "Contratos",
+          data: values,
+          backgroundColor: isDark
+            ? "rgba(99,102,241,0.6)"
+            : "rgba(99,102,241,0.7)",
+          borderColor: isDark
+            ? "rgba(99,102,241,1)"
+            : "rgba(99,102,241,1)",
+          borderWidth: 1,
+          borderRadius: 6,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => `${ctx.parsed.y} contratos`,
+            },
+          },
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: {
+              stepSize: 1,
+              color: isDark ? "#9ca3af" : "#6b7280",
+            },
+            grid: {
+              color: isDark ? "rgba(75,85,99,0.3)" : "rgba(229,231,235,0.8)",
+            },
+          },
+          x: {
+            ticks: { color: isDark ? "#9ca3af" : "#6b7280" },
+            grid: { display: false },
+          },
+        },
+      },
+    });
+  } catch (e) {
+    console.error("[contratos] Erro ao carregar gráfico:", e);
+  }
+}
+
+// =============================================================================
+// CONTRATOS — Carregar tabela paginada
+// Helper para chamadas à API de contratos
+}
+// =============================================================================
+async function carregarContratos(page) {
+  contratosPagAtual = page || 1;
+
+  const loadingEl = document.getElementById("contratos-loading");
+  const tableEl = document.getElementById("contratos-table");
+  const tbody = document.getElementById("contratos-tbody");
+
+  if (loadingEl) loadingEl.classList.remove("hidden");
+  if (tableEl) tableEl.classList.add("hidden");
+
+  try {
+    const params = new URLSearchParams({
+      page: contratosPagAtual,
+      limit: 50,
+      order_by: "data_termino",
+      order_dir: "ASC",
+    });
+
+    if (contratosFiltros.status) params.set("status", contratosFiltros.status);
+    if (contratosFiltros.contratante) params.set("contratante", contratosFiltros.contratante);
+
+    const resp = await contratosApiFetch(`/api/contratos?${params.toString()}`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+    const result = await resp.json();
+    const data = result.data || [];
+    contratosTotal = result.total || 0;
+    contratosTotalPags = result.pages || 1;
+
+    tbody.innerHTML = data.map(c => `
+      <tr>
+        <td class="px-5 py-3 font-mono text-xs font-semibold">${esc(c.codigo)}</td>
+        <td class="px-5 py-3">${esc(c.contratante)}</td>
+        <td class="px-5 py-3 text-xs text-gray-500">${esc(c.alias_matriz)}</td>
+        <td class="px-5 py-3 text-xs">${esc(c.data_inicio)}</td>
+        <td class="px-5 py-3 text-xs">${esc(c.data_termino)}</td>
+        <td class="px-5 py-3 text-xs">${esc(c.forma_envio)}</td>
+        <td class="px-5 py-3">
+          <span class="badge ${c.status === 'Ativo' ? 'badge-success' : 'badge-neutral'}">${esc(c.status)}</span>
+        </td>
+      </tr>
+    `).join("");
+
+    if (loadingEl) loadingEl.classList.add("hidden");
+    if (tableEl) tableEl.classList.remove("hidden");
+
+    // Paginação
+    setTxt("ct-pag-info", `${contratosTotal} contratos`);
+    setTxt("ct-pag-paginas", `${contratosPagAtual} / ${contratosTotalPags}`);
+
+    const btnAnt = document.getElementById("ct-btn-anterior");
+    const btnProx = document.getElementById("ct-btn-proximo");
+    if (btnAnt) btnAnt.disabled = contratosPagAtual <= 1;
+    if (btnProx) btnProx.disabled = contratosPagAtual >= contratosTotalPags;
+  } catch (e) {
+    console.error("[contratos] Erro ao carregar:", e);
+    if (loadingEl) loadingEl.textContent = "Erro ao carregar contratos.";
+  }
+}
+
+function mudarPaginaContratos(delta) {
+  const novaPag = contratosPagAtual + delta;
+  if (novaPag < 1 || novaPag > contratosTotalPags) return;
+  carregarContratos(novaPag);
+}
+
+function limparFiltrosContratos() {
+  contratosFiltros = { status: "", contratante: "" };
+  setVal("filtro-ct-status", "");
+  setVal("filtro-ct-contratante", "");
+  carregarContratos(1);
+}
+
+// =============================================================================
+// CONTRATOS — Exportação CSV
+// Helper para chamadas à API de contratos
+}
+// =============================================================================
+function exportarContratosCSV() {
+  contratosApiFetch("/api/contratos?limit=10000").then(r => r.json()).then(result => {
+    const data = result.data || [];
+    if (!data.length) return toast("Nenhum dado para exportar", "warning");
+
+    const headers = ["Código", "Contratante", "Alias/Matriz", "Início", "Término", "Forma Envio", "Status"];
+    const rows = data.map(c => [
+      csvEsc(c.codigo), csvEsc(c.contratante), csvEsc(c.alias_matriz),
+      csvEsc(c.data_inicio), csvEsc(c.data_termino), csvEsc(c.forma_envio), csvEsc(c.status),
+    ].join(","));
+
+    const csv = [headers.join(","), ...rows].join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    downloadBlob(blob, "contratos.csv");
+    toast("CSV exportado!", "success");
+  }).catch(e => toast("Erro ao exportar: " + e.message, "error"));
+}
+
+// =============================================================================
+// CONTRATOS — Exportação XLSX
+// Helper para chamadas à API de contratos
+}
+// =============================================================================
+function exportarContratosXLSX() {
+  contratosApiFetch("/api/contratos?limit=10000").then(r => r.json()).then(result => {
+    const data = result.data || [];
+    if (!data.length) return toast("Nenhum dado para exportar", "warning");
+
+    const ws = XLSX.utils.json_to_sheet(data.map(c => ({
+      "Código": c.codigo,
+      "Contratante": c.contratante,
+      "Alias/Matriz": c.alias_matriz,
+      "Início": c.data_inicio,
+      "Término": c.data_termino,
+      "Forma Envio": c.forma_envio,
+      "Status": c.status,
+    })));
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Contratos");
+    XLSX.writeFile(wb, "contratos.xlsx");
+    toast("XLSX exportado!", "success");
+  }).catch(e => toast("Erro ao exportar: " + e.message, "error"));
 }
