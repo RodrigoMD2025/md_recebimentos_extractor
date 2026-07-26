@@ -68,7 +68,8 @@ jobs:
           CLIENT_SENHA: ${{ secrets.CLIENT_SENHA }}
           DEFAULT_CHAT_ID: ${{ secrets.DEFAULT_CHAT_ID }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          GITHUB_RUN_ID: ${{ github.run_number }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
         run: |
           cd python_extractor && python client_contratos.py
 

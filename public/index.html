@@ -327,16 +327,19 @@
             </div>
           </div>
 
-          <!-- Monitores de progresso (também lado a lado) -->
+          <!-- Monitores de progresso -->
           <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div id="active-monitor" class="hidden run-monitor run-monitor-blue bg-white dark:bg-gray-900 rounded-xl border border-blue-200 dark:border-blue-800 p-4">
               Execução em andamento...
             </div>
-            <div id="active-monitor-contratos" class="hidden run-monitor run-monitor-indigo bg-white dark:bg-gray-900 rounded-xl border border-indigo-200 dark:border-indigo-800 p-4">
+            <div id="active-monitor-contratos" class="hidden run-monitor run-monitor-indigo lg:col-span-2 bg-white dark:bg-gray-900 rounded-xl border border-indigo-200 dark:border-indigo-800 p-5">
               <p class="text-sm text-indigo-600 dark:text-indigo-400">Clique em "Extrair Contratos" para iniciar.</p>
             </div>
           </div>
           <div id="error-monitor-contratos" class="hidden bg-white dark:bg-gray-900 rounded-xl border border-red-200 dark:border-red-800 p-4"></div>
+
+          <!-- Último relatório de extração de contratos (persistido no banco) -->
+          <div id="last-contratos-report" class="hidden run-monitor run-monitor-indigo bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-5"></div>
         </div>
       </section>
 

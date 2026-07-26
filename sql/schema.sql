@@ -177,3 +177,28 @@ GROUP BY mes, mes_label
 ORDER BY mes ASC;
 
 COMMENT ON VIEW v_contratos_por_mes IS 'Contratos ativos vencendo por mês.';
+
+-- =============================================================================
+-- Tabela de relatórios de extração de contratos (para o monitor do dashboard)
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS extracoes_contratos (
+    id                  SERIAL          PRIMARY KEY,
+    github_run_id       TEXT            NOT NULL DEFAULT '',
+    github_run_number   TEXT            NOT NULL DEFAULT '',
+    total_extraidos     INTEGER         NOT NULL DEFAULT 0,
+    inserts             INTEGER         NOT NULL DEFAULT 0,
+    updates             INTEGER         NOT NULL DEFAULT 0,
+    pages               INTEGER         NOT NULL DEFAULT 1,
+    status              TEXT            NOT NULL DEFAULT 'ok',
+    mensagem            TEXT            NOT NULL DEFAULT '',
+    duracao_segundos    INTEGER         NOT NULL DEFAULT 0,
+    criado_em           TIMESTAMPTZ     NOT NULL DEFAULT NOW()
+);
+
+COMMENT ON TABLE extracoes_contratos IS 'Histórico de execuções do extrator de contratos (inserts/updates e duração).';
+
+CREATE INDEX IF NOT EXISTS idx_extracoes_contratos_criado_em
+    ON extracoes_contratos (criado_em DESC);
+
+CREATE INDEX IF NOT EXISTS idx_extracoes_contratos_run_number
+    ON extracoes_contratos (github_run_number);

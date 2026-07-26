@@ -237,7 +237,10 @@ function navigateTo(section) {
 
   if (section === "history") loadRuns(true);
   if (section === "settings") syncFormFields();
-  if (section === "run") checkGithubConnection();
+  if (section === "run") {
+    checkGithubConnection();
+    loadLastContratosRelatorio();
+  }
   if (section === "dados") {
     if (!dadosInicializado) {
       carregarStats();
@@ -1179,79 +1182,505 @@ function startProgressMonitor(totalJobs) {
 }
 
 let progressMonitorContratosInterval = null;
+let progressMonitorContratosTimer = null;
 
-function startProgressMonitorContratos() {
+function formatDurationHMS(totalSeconds) {
+  const sec = Math.max(0, Math.floor(Number(totalSeconds) || 0));
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  if (h > 0) {
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  }
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+function ctStepIcon(step) {
+  const status = step?.status;
+  const conclusion = step?.conclusion;
+  if (status === "completed" || conclusion === "success") {
+    return '<span class="ct-step-icon ct-step-ok" title="Concluído">✓</span>';
+  }
+  if (conclusion === "failure") {
+    return '<span class="ct-step-icon ct-step-fail" title="Falhou">✕</span>';
+  }
+  if (conclusion === "cancelled" || conclusion === "skipped") {
+    return '<span class="ct-step-icon ct-step-skip" title="Ignorado">–</span>';
+  }
+  if (status === "in_progress") {
+    return '<span class="ct-step-icon ct-step-run" title="Em andamento">●</span>';
+  }
+  return '<span class="ct-step-icon ct-step-wait" title="Pendente">○</span>';
+}
+
+function renderContratosSteps(jobs) {
+  const listEl = document.getElementById("ct-steps-list");
+  if (!listEl) return;
+
+  const job = (jobs && jobs[0]) || null;
+  const steps = (job?.steps || []).filter((s) => s && s.name);
+  if (!steps.length) {
+    listEl.innerHTML = `
+      <li class="ct-step ct-step-muted">
+        <span class="ct-step-icon ct-step-wait">○</span>
+        <span>Aguardando etapas do GitHub Actions...</span>
+      </li>`;
+    return;
+  }
+
+  listEl.innerHTML = steps
+    .map((step) => {
+      const active = step.status === "in_progress" ? " ct-step-active" : "";
+      const done =
+        step.status === "completed" || step.conclusion === "success"
+          ? " ct-step-done"
+          : "";
+      const fail = step.conclusion === "failure" ? " ct-step-failed" : "";
+      return `
+        <li class="ct-step${active}${done}${fail}">
+          ${ctStepIcon(step)}
+          <span class="ct-step-name">${step.name}</span>
+          <span class="ct-step-meta">${
+            step.status === "in_progress"
+              ? "em andamento"
+              : step.conclusion === "success"
+                ? "ok"
+                : step.conclusion || step.status || ""
+          }</span>
+        </li>`;
+    })
+    .join("");
+}
+
+function setContratosMonitorProgress(percent, barClass) {
+  const barEl = document.getElementById("ct-progress-bar");
+  if (!barEl) return;
+  const pct = Math.max(0, Math.min(100, Number(percent) || 0));
+  barEl.style.width = `${pct}%`;
+  if (barClass) {
+    barEl.className = `${barClass} h-2.5 rounded-full transition-all duration-500`;
+  }
+}
+
+function stopContratosMonitors() {
   if (progressMonitorContratosInterval) {
     clearInterval(progressMonitorContratosInterval);
+    progressMonitorContratosInterval = null;
   }
+  if (progressMonitorContratosTimer) {
+    clearInterval(progressMonitorContratosTimer);
+    progressMonitorContratosTimer = null;
+  }
+}
+
+async function fetchContratosRelatorio({ runNumber, sinceIso, attempts = 8, delayMs = 2500 }) {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const params = { relatorio: "1" };
+      if (runNumber) params.run_number = String(runNumber);
+      if (sinceIso) params.since = sinceIso;
+      const res = await githubApiFetch("/api/contratos", { params });
+      if (res?.data) return res.data;
+    } catch (err) {
+      console.warn("Relatório de contratos ainda indisponível:", err.message);
+    }
+    if (i < attempts - 1) {
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+  return null;
+}
+
+function buildContratosRelatorioHtml(relatorio, opts = {}) {
+  const inserts = Number(relatorio?.inserts) || 0;
+  const updates = Number(relatorio?.updates) || 0;
+  const total = Number(relatorio?.total_extraidos) || inserts + updates;
+  const duracao =
+    relatorio?.duracao_segundos != null
+      ? formatDurationHMS(relatorio.duracao_segundos)
+      : opts.wallElapsedSec != null
+        ? formatDurationHMS(opts.wallElapsedSec)
+        : "--:--";
+  const mensagem = relatorio?.mensagem || "";
+  const hasNew = inserts > 0;
+  const title = opts.title || "Relatório da extração";
+  const run = opts.run || null;
+  const criadoEm = relatorio?.criado_em
+    ? new Date(relatorio.criado_em).toLocaleString("pt-BR")
+    : null;
+  const runNumber = relatorio?.github_run_number || run?.run_number || "";
+
+  return `
+    <div class="ct-report-box">
+      <div class="flex items-center justify-between gap-2 mb-3">
+        <div class="min-w-0">
+          <p class="text-sm font-semibold text-gray-800 dark:text-gray-100">${title}</p>
+          ${criadoEm ? `<p class="text-[11px] text-gray-400 mt-0.5">${criadoEm}${runNumber ? ` · run #${runNumber}` : ""}</p>` : ""}
+        </div>
+        <span class="text-[11px] text-gray-400 flex-shrink-0">duração ${duracao}</span>
+      </div>
+      <div class="grid grid-cols-3 gap-2 mb-3">
+        <div class="ct-stat-pill ${hasNew ? "ct-stat-new" : ""}">
+          <p class="ct-stat-label">Novos</p>
+          <p class="ct-stat-value">${inserts}</p>
+        </div>
+        <div class="ct-stat-pill">
+          <p class="ct-stat-label">Atualizados</p>
+          <p class="ct-stat-value">${updates}</p>
+        </div>
+        <div class="ct-stat-pill">
+          <p class="ct-stat-label">Extraídos</p>
+          <p class="ct-stat-value">${total}</p>
+        </div>
+      </div>
+      <p class="text-xs ${hasNew ? "text-emerald-600 dark:text-emerald-400" : "text-gray-500 dark:text-gray-400"}">
+        ${
+          hasNew
+            ? `✅ ${inserts} contrato(s) novo(s) incluído(s) na base.`
+            : "ℹ️ Nenhum contrato novo — registros existentes foram revalidados/atualizados."
+        }
+      </p>
+      ${mensagem ? `<p class="text-[11px] text-gray-400 mt-1">${mensagem}</p>` : ""}
+      ${
+        run?.html_url
+          ? `<a href="${run.html_url}" target="_blank" rel="noopener" class="inline-flex items-center gap-1 mt-3 text-xs text-indigo-600 dark:text-indigo-400 hover:underline">
+              Ver run #${run.run_number || runNumber || ""} no GitHub ↗
+            </a>`
+          : ""
+      }
+    </div>
+  `;
+}
+
+function renderContratosRelatorioFinal(relatorio, run, wallElapsedSec) {
+  const reportEl = document.getElementById("ct-report");
+  if (!reportEl) return;
+  reportEl.classList.remove("hidden");
+  reportEl.innerHTML = buildContratosRelatorioHtml(relatorio, {
+    title: "Relatório da extração",
+    run,
+    wallElapsedSec,
+  });
+  // Atualiza também o card de "última extração"
+  const lastEl = document.getElementById("last-contratos-report");
+  if (lastEl && relatorio) {
+    lastEl.classList.remove("hidden");
+    lastEl.innerHTML = buildContratosRelatorioHtml(relatorio, {
+      title: "Última extração de contratos",
+      run,
+      wallElapsedSec,
+    });
+  }
+}
+
+async function loadLastContratosRelatorio() {
+  const lastEl = document.getElementById("last-contratos-report");
+  if (!lastEl) return;
+  // Não sobrescreve se o monitor ao vivo estiver aberto
+  const live = document.getElementById("active-monitor-contratos");
+  if (live && !live.classList.contains("hidden") && live.querySelector("#ct-elapsed")) {
+    return;
+  }
+  try {
+    const res = await githubApiFetch("/api/contratos", { params: { relatorio: "1" } });
+    if (!res?.data) {
+      lastEl.classList.add("hidden");
+      lastEl.innerHTML = "";
+      return;
+    }
+    lastEl.classList.remove("hidden");
+    lastEl.innerHTML = buildContratosRelatorioHtml(res.data, {
+      title: "Última extração de contratos",
+    });
+  } catch (err) {
+    console.warn("Não foi possível carregar o último relatório de contratos:", err.message);
+  }
+}
+
+function startProgressMonitorContratos() {
+  stopContratosMonitors();
 
   const monitorEl = document.getElementById("active-monitor-contratos");
   if (!monitorEl) return;
 
   const startTime = Date.now();
+  const sinceIso = new Date(startTime - 15000).toISOString(); // margem p/ clock skew
+  let trackedRunId = null;
+  let trackedRunNumber = null;
+  let finished = false;
+  let baselineTotal = null;
 
+  // Snapshot do total atual (para reforçar se houve inclusão)
+  githubApiFetch("/api/contratos", { params: { stats: "1" } })
+    .then((s) => {
+      baselineTotal = Number(s?.total) || 0;
+    })
+    .catch(() => {});
+
+  monitorEl.classList.remove("hidden");
   monitorEl.innerHTML = `
-    <div class="space-y-3">
-      <div class="flex items-center justify-between text-sm">
-        <span>Extração de contratos em andamento...</span>
-        <span id="ct-progress-status">aguardando início</span>
+    <div class="space-y-4">
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <p class="text-sm font-semibold text-gray-800 dark:text-gray-100">Extração de contratos</p>
+          <p id="ct-run-meta" class="text-[11px] text-gray-400 mt-0.5">Aguardando run no GitHub Actions...</p>
+        </div>
+        <div class="text-right flex-shrink-0">
+          <span id="ct-progress-status" class="ct-status-badge ct-status-wait">aguardando</span>
+          <p id="ct-elapsed" class="text-xs font-mono text-gray-500 dark:text-gray-400 mt-1">00:00</p>
+        </div>
       </div>
-      <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
-        <div id="ct-progress-bar" class="bg-indigo-500 h-2.5 rounded-full transition-all duration-500" style="width: 5%"></div>
+
+      <div>
+        <div class="flex items-center justify-between text-[11px] text-gray-500 mb-1.5">
+          <span id="ct-current-step">Preparando...</span>
+          <span id="ct-progress-pct">0%</span>
+        </div>
+        <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5 overflow-hidden">
+          <div id="ct-progress-bar" class="bg-indigo-500 h-2.5 rounded-full transition-all duration-500" style="width: 4%"></div>
+        </div>
       </div>
-      <div id="ct-progress-info" class="text-xs text-gray-500">Buscando execução no GitHub Actions...</div>
+
+      <div>
+        <p class="text-[11px] font-medium uppercase tracking-wide text-gray-400 mb-2">Etapas do GitHub Actions</p>
+        <ul id="ct-steps-list" class="ct-steps space-y-1.5"></ul>
+      </div>
+
+      <div id="ct-live-info" class="text-xs text-gray-500 dark:text-gray-400">
+        Disparo enviado. Buscando a execução no repositório...
+      </div>
+
+      <div id="ct-report" class="hidden"></div>
     </div>
   `;
 
-  progressMonitorContratosInterval = setInterval(async () => {
+  renderContratosSteps([]);
+
+  // Timer local em segundos (independente do poll)
+  progressMonitorContratosTimer = setInterval(() => {
+    const elapsedEl = document.getElementById("ct-elapsed");
+    if (elapsedEl) {
+      elapsedEl.textContent = formatDurationHMS((Date.now() - startTime) / 1000);
+    }
+  }, 1000);
+
+  const setStatusBadge = (label, kind) => {
+    const el = document.getElementById("ct-progress-status");
+    if (!el) return;
+    el.textContent = label;
+    el.className = `ct-status-badge ct-status-${kind || "wait"}`;
+  };
+
+  const finalize = async (run, kind) => {
+    if (finished) return;
+    finished = true;
+    stopContratosMonitors();
+
+    const wallElapsed = (Date.now() - startTime) / 1000;
+    const elapsedEl = document.getElementById("ct-elapsed");
+    if (elapsedEl) elapsedEl.textContent = formatDurationHMS(wallElapsed);
+
+    if (run?.jobs) renderContratosSteps(run.jobs);
+
+    if (kind === "success") {
+      setStatusBadge("concluído", "ok");
+      setContratosMonitorProgress(100, "bg-emerald-500");
+      const pctEl = document.getElementById("ct-progress-pct");
+      if (pctEl) pctEl.textContent = "100%";
+      const stepEl = document.getElementById("ct-current-step");
+      if (stepEl) stepEl.textContent = "Finalizado";
+      const liveEl = document.getElementById("ct-live-info");
+      if (liveEl) {
+        liveEl.textContent = "Workflow concluído. Carregando relatório de inserts/updates...";
+      }
+
+      const relatorio = await fetchContratosRelatorio({
+        runNumber: run?.run_number || trackedRunNumber,
+        sinceIso,
+        attempts: 10,
+        delayMs: 2000,
+      });
+
+      // Fallback: se o relatório ainda não chegou, compara totais
+      let reportData = relatorio;
+      if (!reportData && baselineTotal != null) {
+        try {
+          const stats = await githubApiFetch("/api/contratos", { params: { stats: "1" } });
+          const newTotal = Number(stats?.total) || 0;
+          const delta = Math.max(0, newTotal - baselineTotal);
+          reportData = {
+            inserts: delta,
+            updates: 0,
+            total_extraidos: delta,
+            mensagem:
+              delta > 0
+                ? `Detectados ~${delta} registro(s) a mais na base (relatório detalhado ainda indisponível).`
+                : "Sem variação no total da base (relatório detalhado ainda indisponível).",
+            duracao_segundos: Math.round(wallElapsed),
+          };
+        } catch (_) {
+          reportData = {
+            inserts: 0,
+            updates: 0,
+            total_extraidos: 0,
+            mensagem: "Relatório detalhado ainda não disponível. Tente atualizar em instantes.",
+            duracao_segundos: Math.round(wallElapsed),
+          };
+        }
+      }
+
+      renderContratosRelatorioFinal(reportData, run, wallElapsed);
+      if (liveEl) {
+        liveEl.textContent = `Finalizado em ${new Date(run?.updated_at || Date.now()).toLocaleString("pt-BR")}`;
+      }
+      // Mantém o painel visível por mais tempo para leitura do relatório
+      setTimeout(() => {
+        // não esconde automaticamente se o usuário ainda está na seção
+      }, 0);
+      return;
+    }
+
+    // failure / cancelled
+    setStatusBadge(kind === "failure" ? "falhou" : "cancelado", "fail");
+    setContratosMonitorProgress(100, "bg-red-500");
+    const liveEl = document.getElementById("ct-live-info");
+    if (liveEl) {
+      liveEl.innerHTML = kind === "failure"
+        ? `A execução falhou. ${run?.html_url ? `<a class="text-indigo-600 underline" href="${run.html_url}" target="_blank" rel="noopener">Abrir no GitHub</a>` : "Verifique o GitHub Actions."}`
+        : "A execução foi cancelada.";
+    }
+    const reportEl = document.getElementById("ct-report");
+    if (reportEl) {
+      // tenta pegar relatório de erro se o extrator salvou
+      fetchContratosRelatorio({
+        runNumber: run?.run_number || trackedRunNumber,
+        sinceIso,
+        attempts: 3,
+        delayMs: 1500,
+      }).then((rel) => {
+        if (rel) renderContratosRelatorioFinal(rel, run, wallElapsed);
+      });
+    }
+  };
+
+  const tick = async () => {
+    if (finished) return;
     try {
       const data = await githubApiFetch("/api/github-runs", {
-        params: { per_page: 1, page: 1, workflow_id: "contratos.yml" },
+        params: {
+          per_page: 3,
+          page: 1,
+          workflow_id: "contratos.yml",
+          include_jobs: "1",
+        },
       });
-      const latestRun = data?.workflow_runs?.[0];
 
-      if (!latestRun) {
-        document.getElementById("ct-progress-status").textContent = "na fila...";
-        document.getElementById("ct-progress-info").textContent = "Aguardando a execução aparecer no GitHub...";
+      const runs = data?.workflow_runs || [];
+      // Preferir a run que iniciou após o disparo (ou a mais recente)
+      let run =
+        runs.find((r) => trackedRunId && String(r.id) === String(trackedRunId)) ||
+        runs.find((r) => {
+          const created = new Date(r.created_at || r.run_started_at || 0).getTime();
+          return created >= startTime - 60000;
+        }) ||
+        runs[0] ||
+        null;
+
+      if (!run) {
+        setStatusBadge("na fila", "wait");
+        const liveEl = document.getElementById("ct-live-info");
+        if (liveEl) {
+          liveEl.textContent = "Aguardando a execução aparecer no GitHub Actions...";
+        }
+        setContratosMonitorProgress(6, "bg-indigo-500");
         return;
       }
 
-      const status = latestRun.conclusion || latestRun.status;
-      const statusEl = document.getElementById("ct-progress-status");
-      const infoEl = document.getElementById("ct-progress-info");
-      const barEl = document.getElementById("ct-progress-bar");
+      trackedRunId = run.id;
+      trackedRunNumber = run.run_number;
 
-      if (status === "success") {
-        statusEl.textContent = "concluído ✅";
-        infoEl.textContent = `Finalizado em ${new Date(latestRun.updated_at).toLocaleString("pt-BR")}`;
-        barEl.style.width = "100%";
-        clearInterval(progressMonitorContratosInterval);
-        setTimeout(() => { monitorEl.classList.add("hidden"); }, 5000);
+      const metaEl = document.getElementById("ct-run-meta");
+      if (metaEl) {
+        const eventLabel = run.event || "dispatch";
+        metaEl.innerHTML = `Run <strong>#${run.run_number}</strong> · ${eventLabel}${
+          run.html_url
+            ? ` · <a href="${run.html_url}" target="_blank" rel="noopener" class="text-indigo-600 dark:text-indigo-400 hover:underline">abrir ↗</a>`
+            : ""
+        }`;
+      }
+
+      if (run.jobs) renderContratosSteps(run.jobs);
+
+      const summary = run.job_summary || null;
+      const conclusion = run.conclusion;
+      const status = conclusion || run.status;
+
+      if (conclusion === "success") {
+        await finalize(run, "success");
+        return;
+      }
+      if (conclusion === "failure" || conclusion === "cancelled" || conclusion === "timed_out") {
+        await finalize(run, conclusion === "cancelled" ? "cancelled" : "failure");
         return;
       }
 
-      if (status === "failure" || status === "cancelled") {
-        statusEl.textContent = status === "failure" ? "falhou ❌" : "cancelado ⚠️";
-        infoEl.textContent = `Verifique o GitHub Actions para detalhes.`;
-        barEl.style.width = "100%";
-        barEl.className = "bg-red-500 h-2.5 rounded-full transition-all duration-500";
-        clearInterval(progressMonitorContratosInterval);
-        setTimeout(() => { monitorEl.classList.add("hidden"); }, 8000);
-        return;
-      }
+      // Em andamento
+      const isQueued = status === "queued" || status === "waiting" || status === "requested";
+      setStatusBadge(isQueued ? "na fila" : "executando", isQueued ? "wait" : "run");
 
-      if (status === "in_progress" || status === "queued") {
-        statusEl.textContent = status === "in_progress" ? "executando..." : "na fila...";
+      let percent = 8;
+      if (summary && summary.steps_total > 0) {
+        percent = Math.min(
+          92,
+          Math.round((summary.steps_done / summary.steps_total) * 100)
+        );
+        // Se há step em andamento, mostra progresso parcial do step atual
+        if (summary.current_step && summary.steps_done < summary.steps_total) {
+          percent = Math.min(92, percent + Math.round(100 / summary.steps_total / 2));
+        }
+      } else {
+        // fallback por tempo (estimativa ~15 min)
         const elapsed = (Date.now() - startTime) / 1000;
-        const progress = Math.min(95, (elapsed / 5400) * 100);
-        barEl.style.width = `${progress}%`;
-        const elapsedMin = Math.floor(elapsed / 60);
-        infoEl.textContent = `Executando há ${elapsedMin} minuto(s)...`;
+        percent = Math.min(85, 8 + (elapsed / 900) * 77);
+      }
+
+      setContratosMonitorProgress(percent, "bg-indigo-500");
+      const pctEl = document.getElementById("ct-progress-pct");
+      if (pctEl) pctEl.textContent = `${Math.round(percent)}%`;
+
+      const stepEl = document.getElementById("ct-current-step");
+      if (stepEl) {
+        stepEl.textContent = summary?.current_step
+          ? `Etapa: ${summary.current_step}`
+          : isQueued
+            ? "Na fila do GitHub Actions..."
+            : "Workflow em execução...";
+      }
+
+      const liveEl = document.getElementById("ct-live-info");
+      if (liveEl) {
+        const parts = [];
+        if (summary?.job_name) parts.push(`Job: ${summary.job_name}`);
+        if (summary?.steps_total) {
+          parts.push(`Passos: ${summary.steps_done}/${summary.steps_total}`);
+        }
+        if (summary?.current_step) parts.push(summary.current_step);
+        liveEl.textContent = parts.length
+          ? parts.join(" · ")
+          : "Executando no GitHub Actions...";
       }
     } catch (err) {
       console.error("Erro ao monitorar contratos:", err);
+      const liveEl = document.getElementById("ct-live-info");
+      if (liveEl) {
+        liveEl.textContent = `Erro ao consultar GitHub: ${err.message}`;
+      }
     }
-  }, 5000);
+  };
+
+  // Primeiro tick imediato + poll a cada 4s
+  tick();
+  progressMonitorContratosInterval = setInterval(tick, 4000);
 }
 
 function updateProgress(progress, total, startTime, elapsed) {

@@ -128,6 +128,63 @@ async function handleGet(req, res) {
     }
   }
 
+  // Rota especial: /api/contratos?relatorio=1 — último relatório de extração (ou por run_number)
+  if (req.query && (String(req.query.relatorio) === "1" || String(req.query.relatorio) === "true")) {
+    try {
+      const runNumber = req.query.run_number ? String(req.query.run_number) : "";
+      const since = req.query.since ? String(req.query.since) : "";
+      const params = [];
+      const conditions = [];
+
+      if (runNumber) {
+        params.push(runNumber);
+        conditions.push(`github_run_number = $${params.length}`);
+      }
+      if (since) {
+        params.push(since);
+        conditions.push(`criado_em >= $${params.length}::timestamptz`);
+      }
+
+      const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+      const relatorioResult = await query(
+        `
+        SELECT
+          id, github_run_id, github_run_number, total_extraidos,
+          inserts, updates, pages, status, mensagem,
+          duracao_segundos, criado_em
+        FROM extracoes_contratos
+        ${where}
+        ORDER BY criado_em DESC
+        LIMIT 1
+        `,
+        params
+      );
+
+      if (!relatorioResult.rows.length) {
+        return res.status(200).json({ data: null });
+      }
+
+      const row = relatorioResult.rows[0];
+      return res.status(200).json({
+        data: {
+          ...row,
+          inserts: Number(row.inserts) || 0,
+          updates: Number(row.updates) || 0,
+          total_extraidos: Number(row.total_extraidos) || 0,
+          pages: Number(row.pages) || 0,
+          duracao_segundos: Number(row.duracao_segundos) || 0,
+        },
+      });
+    } catch (dbErr) {
+      // Tabela ainda não criada: retorna vazio em vez de quebrar o monitor
+      if (dbErr.code === "42P01") {
+        return res.status(200).json({ data: null, pending_schema: true });
+      }
+      console.error("[contratos] Erro ao buscar relatório:", dbErr);
+      return res.status(500).json({ error: "Erro interno ao consultar relatório de extração." });
+    }
+  }
+
   const conditions = [];
   const params = [];
 

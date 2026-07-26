@@ -1,8 +1,6 @@
 import asyncio
-import json
 import logging
 import os
-import uuid
 from datetime import datetime
 
 import aiohttp
@@ -23,16 +21,42 @@ CLIENT_EMAIL = os.getenv("CLIENT_EMAIL")
 CLIENT_SENHA = os.getenv("CLIENT_SENHA")
 DEFAULT_CHAT_ID = os.getenv("DEFAULT_CHAT_ID")
 DATABASE_URL = os.getenv("DATABASE_URL")
-GITHUB_RUN_ID = os.getenv("GITHUB_RUN_ID")
+GITHUB_RUN_ID = os.getenv("GITHUB_RUN_ID", "")
+GITHUB_RUN_NUMBER = os.getenv("GITHUB_RUN_NUMBER", "") or GITHUB_RUN_ID
 
 URL_LOGIN = "http://sistema.musicdelivery.com.br/login?login_error"
 URL_CONTRATOS = "http://sistema.musicdelivery.com.br/contratos"
 
 MAX_RETRIES = 3
 
+ENSURE_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS extracoes_contratos (
+    id                  SERIAL          PRIMARY KEY,
+    github_run_id       TEXT            NOT NULL DEFAULT '',
+    github_run_number   TEXT            NOT NULL DEFAULT '',
+    total_extraidos     INTEGER         NOT NULL DEFAULT 0,
+    inserts             INTEGER         NOT NULL DEFAULT 0,
+    updates             INTEGER         NOT NULL DEFAULT 0,
+    pages               INTEGER         NOT NULL DEFAULT 1,
+    status              TEXT            NOT NULL DEFAULT 'ok',
+    mensagem            TEXT            NOT NULL DEFAULT '',
+    duracao_segundos    INTEGER         NOT NULL DEFAULT 0,
+    criado_em           TIMESTAMPTZ     NOT NULL DEFAULT NOW()
+);
+"""
+
+
+def format_duration(seconds: float) -> str:
+    total = max(0, int(seconds))
+    h, rem = divmod(total, 3600)
+    m, s = divmod(rem, 60)
+    if h:
+        return f"{h:02d}:{m:02d}:{s:02d}"
+    return f"{m:02d}:{s:02d}"
+
 
 async def fazer_login(page):
-    logging.info("Acessando página de login...")
+    logging.info("[etapa] Login no sistema Music Delivery...")
     await page.goto(URL_LOGIN, wait_until="domcontentloaded", timeout=60000)
     await asyncio.sleep(3)
 
@@ -101,7 +125,6 @@ async def navegar_pagina(page, url):
     return False
 
 
-
 async def salvar_neon(contratos):
     if not contratos:
         return 0, 0
@@ -112,7 +135,8 @@ async def salvar_neon(contratos):
 
     try:
         for c in contratos:
-            result = await conn.execute("""
+            row = await conn.fetchrow(
+                """
                 INSERT INTO contratos (codigo, contratante, alias_matriz, data_inicio, data_termino, forma_envio, status)
                 VALUES ($1, $2, $3, $4, $5, $6, $7)
                 ON CONFLICT (codigo) DO UPDATE SET
@@ -122,7 +146,8 @@ async def salvar_neon(contratos):
                     data_termino = EXCLUDED.data_termino,
                     forma_envio = EXCLUDED.forma_envio,
                     status = EXCLUDED.status
-            """,
+                RETURNING (xmax = 0) AS is_inserted
+                """,
                 c["codigo"],
                 c["contratante"],
                 c["alias_matriz"],
@@ -131,7 +156,7 @@ async def salvar_neon(contratos):
                 c["forma_envio"],
                 c["status"],
             )
-            if result.startswith("INSERT"):
+            if row and row["is_inserted"]:
                 inserts += 1
             else:
                 updates += 1
@@ -139,6 +164,49 @@ async def salvar_neon(contratos):
         await conn.close()
 
     return inserts, updates
+
+
+async def salvar_relatorio_extracao(
+    *,
+    total_extraidos,
+    inserts,
+    updates,
+    pages,
+    status,
+    mensagem,
+    duracao_segundos,
+):
+    """Persiste o resumo da execução para o dashboard consultar via API."""
+    if not DATABASE_URL:
+        logging.warning("DATABASE_URL ausente — relatório não será salvo no banco.")
+        return
+
+    conn = await asyncpg.connect(DATABASE_URL)
+    try:
+        await conn.execute(ENSURE_TABLE_SQL)
+        await conn.execute(
+            """
+            INSERT INTO extracoes_contratos (
+                github_run_id, github_run_number, total_extraidos,
+                inserts, updates, pages, status, mensagem, duracao_segundos
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            """,
+            str(GITHUB_RUN_ID or ""),
+            str(GITHUB_RUN_NUMBER or ""),
+            int(total_extraidos),
+            int(inserts),
+            int(updates),
+            int(pages),
+            status,
+            mensagem,
+            int(duracao_segundos),
+        )
+        logging.info(
+            f"Relatório salvo no Neon: inserts={inserts} updates={updates} "
+            f"run_number={GITHUB_RUN_NUMBER}"
+        )
+    finally:
+        await conn.close()
 
 
 async def enviar_telegram(texto):
@@ -165,65 +233,113 @@ async def enviar_telegram(texto):
 
 
 async def main():
+    inicio = datetime.now()
     logging.info("=== EXTRATORES DE CONTRATOS MD ===")
+    logging.info(f"GitHub run_id={GITHUB_RUN_ID or '-'} run_number={GITHUB_RUN_NUMBER or '-'}")
 
     if not all([CLIENT_EMAIL, CLIENT_SENHA, DATABASE_URL]):
         logging.error("Variáveis CLIENT_EMAIL, CLIENT_SENHA e DATABASE_URL são obrigatórias.")
         return
 
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context(
-            viewport={"width": 1440, "height": 900},
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/131.0.0.0 Safari/537.36"
-            ),
-        )
-        page = await context.new_page()
-        page.set_default_timeout(30000)
+    inserts_total = 0
+    updates_total = 0
+    total_extraidos = 0
+    pages = 0
+    status = "ok"
+    mensagem = ""
 
-        if not await fazer_login(page):
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            context = await browser.new_context(
+                viewport={"width": 1440, "height": 900},
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/131.0.0.0 Safari/537.36"
+                ),
+            )
+            page = await context.new_page()
+            page.set_default_timeout(30000)
+
+            if not await fazer_login(page):
+                status = "error"
+                mensagem = "Falha no login do sistema Music Delivery"
+                await browser.close()
+                raise RuntimeError(mensagem)
+
+            logging.info("[etapa] Navegando para página de contratos...")
+            if not await navegar_pagina(page, URL_CONTRATOS):
+                status = "error"
+                mensagem = "Não foi possível acessar a página de contratos"
+                await browser.close()
+                raise RuntimeError(mensagem)
+
+            logging.info("[etapa] Extraindo primeira página da tabela...")
+            contratos = await extrair_tabela_pagina(page)
+            pages = 1
+            total_extraidos = len(contratos)
+            logging.info(f"  Encontrados: {total_extraidos} contratos")
+
+            if contratos:
+                logging.info("[etapa] Salvando no Neon (UPSERT)...")
+                inserts_total, updates_total = await salvar_neon(contratos)
+                logging.info(f"  >> Neon: +{inserts_total} inserts, +{updates_total} updates")
+                if inserts_total > 0:
+                    mensagem = f"{inserts_total} contrato(s) novo(s) e {updates_total} atualizado(s)"
+                elif updates_total > 0:
+                    mensagem = f"Nenhum contrato novo — {updates_total} registro(s) já existentes revalidados"
+                else:
+                    mensagem = "Nenhum registro processado"
+            else:
+                status = "warning"
+                mensagem = "Nenhum contrato encontrado na primeira página"
+                logging.warning(mensagem)
+
             await browser.close()
-            return
 
-        logging.info("Navegando para contratos...")
-        if not await navegar_pagina(page, URL_CONTRATOS):
-            logging.error("Não foi possível acessar contratos")
-            await browser.close()
-            return
+    except Exception as e:
+        status = "error"
+        mensagem = str(e)
+        logging.error(f"Erro na extração: {e}")
 
-        logging.info("Extraindo primeira página...")
-        contratos = await extrair_tabela_pagina(page)
-        logging.info(f"  Encontrados: {len(contratos)} contratos")
+    duracao = (datetime.now() - inicio).total_seconds()
+    duracao_txt = format_duration(duracao)
 
-        inserts_total = 0
-        updates_total = 0
-
-        if contratos:
-            ins, ups = await salvar_neon(contratos)
-            inserts_total = ins
-            updates_total = ups
-            logging.info(f"  >> Neon: +{ins} inserts, +{ups} updates")
-        else:
-            logging.warning("Nenhum contrato encontrado na primeira página.")
-
-        # Relatório final
-        now = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-        relatorio = (
-            f"📋 <b>Extração de Contratos - Concluída</b>\n\n"
-            f"🕐 <b>Data:</b> {now}\n"
-            f"📄 <b>Páginas processadas:</b> 1 (primeira página)\n"
-            f"📥 <b>Novos inserts:</b> {inserts_total}\n"
-            f"🔄 <b>Updates:</b> {updates_total}\n"
-            f"✅ <b>Total:</b> {inserts_total + updates_total} contratos processados"
+    try:
+        await salvar_relatorio_extracao(
+            total_extraidos=total_extraidos,
+            inserts=inserts_total,
+            updates=updates_total,
+            pages=pages or 1,
+            status=status,
+            mensagem=mensagem,
+            duracao_segundos=int(duracao),
         )
+    except Exception as e:
+        logging.error(f"Falha ao salvar relatório da extração: {e}")
 
-        await enviar_telegram(relatorio)
-        logging.info(f"=== FIM: {inserts_total} inserts, {updates_total} updates ===")
+    now = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+    relatorio = (
+        f"📋 <b>Extração de Contratos - {'Concluída' if status == 'ok' else status.upper()}</b>\n\n"
+        f"🕐 <b>Data:</b> {now}\n"
+        f"⏱️ <b>Duração:</b> {duracao_txt}\n"
+        f"🔢 <b>Run:</b> #{GITHUB_RUN_NUMBER or '-'}\n"
+        f"📄 <b>Páginas processadas:</b> {pages or 1}\n"
+        f"📦 <b>Extraídos:</b> {total_extraidos}\n"
+        f"📥 <b>Novos inserts:</b> {inserts_total}\n"
+        f"🔄 <b>Updates:</b> {updates_total}\n"
+        f"📝 <b>Resumo:</b> {mensagem or '-'}"
+    )
 
-        await browser.close()
+    await enviar_telegram(relatorio)
+    logging.info(
+        f"=== FIM status={status} duração={duracao_txt} "
+        f"inserts={inserts_total} updates={updates_total} ==="
+    )
+
+    if status == "error":
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

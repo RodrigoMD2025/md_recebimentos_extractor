@@ -38,6 +38,10 @@ async function handleGet(req, res) {
   const perPage = Math.min(100, Math.max(1, Number(query.per_page) || 50));
   const page = Math.max(1, Number(query.page) || 1);
   const withInputs = query.with_inputs === "true";
+  const includeJobs =
+    query.include_jobs === "1" ||
+    query.include_jobs === "true" ||
+    String(query.include_jobs).toLowerCase() === "yes";
   const workflowId = query.workflow_id || config.workflowId;
 
   try {
@@ -108,6 +112,64 @@ async function handleGet(req, res) {
             // Silencioso
           }
         }),
+      );
+    }
+
+    // Enriquecer com jobs/steps (usado pelo monitor de Contratos)
+    if (includeJobs && workflow_runs.length) {
+      // Limita a N runs para não estourar rate limit (monitor pede 1–3)
+      const runsToEnrich = workflow_runs.slice(0, Math.min(workflow_runs.length, 5));
+      await Promise.all(
+        runsToEnrich.map(async (run) => {
+          try {
+            const jobsData = await githubRequest(
+              `/repos/${config.owner}/${config.repo}/actions/runs/${run.id}/jobs?per_page=100`
+            );
+            const jobs = (jobsData?.jobs || []).map((job) => ({
+              id: job.id,
+              name: job.name,
+              status: job.status,
+              conclusion: job.conclusion,
+              started_at: job.started_at,
+              completed_at: job.completed_at,
+              html_url: job.html_url,
+              steps: (job.steps || []).map((step) => ({
+                name: step.name,
+                status: step.status,
+                conclusion: step.conclusion,
+                number: step.number,
+                started_at: step.started_at,
+                completed_at: step.completed_at,
+              })),
+            }));
+            run.jobs = jobs;
+
+            // Resumo útil para o monitor: etapa atual e progresso dos steps
+            const primaryJob = jobs[0] || null;
+            if (primaryJob) {
+              const steps = primaryJob.steps || [];
+              const done = steps.filter(
+                (s) => s.status === "completed" || s.conclusion
+              ).length;
+              const current =
+                steps.find((s) => s.status === "in_progress") ||
+                steps.find((s) => s.status === "queued") ||
+                null;
+              run.job_summary = {
+                job_name: primaryJob.name,
+                job_status: primaryJob.status,
+                job_conclusion: primaryJob.conclusion,
+                steps_total: steps.length,
+                steps_done: done,
+                current_step: current ? current.name : null,
+                html_url: primaryJob.html_url || run.html_url || null,
+              };
+            }
+          } catch (jobsErr) {
+            run.jobs = [];
+            run.job_summary = null;
+          }
+        })
       );
     }
 
