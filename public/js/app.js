@@ -1390,14 +1390,13 @@ function startProgressMonitorContratos() {
     </div>
   `;
 
-  // Timer sincronizado com início real da run no GitHub
+  // Timer contínuo desde o clique no botão (startTime)
   progressMonitorContratosTimer = setInterval(() => {
     const elapsedEl = document.getElementById("ct-elapsed");
     if (elapsedEl) {
-      const base = runStartTime || startTime;
-      elapsedEl.textContent = formatDurationHMS((Date.now() - base) / 1000);
+      elapsedEl.textContent = formatDurationHMS((Date.now() - startTime) / 1000);
     }
-  }, 1000);
+  }, 200);
 
   const setStatusBadge = (label, kind) => {
     const el = document.getElementById("ct-progress-status");
@@ -1411,7 +1410,7 @@ function startProgressMonitorContratos() {
     finished = true;
     stopContratosMonitors();
 
-    const wallElapsed = (Date.now() - (runStartTime || startTime)) / 1000;
+    const wallElapsed = (Date.now() - startTime) / 1000;
     const elapsedEl = document.getElementById("ct-elapsed");
     if (elapsedEl) elapsedEl.textContent = formatDurationHMS(wallElapsed);
 
@@ -1522,10 +1521,10 @@ function startProgressMonitorContratos() {
       trackedRunId = run.id;
       trackedRunNumber = run.run_number;
 
-      // Sincroniza timer com o início real da run no GitHub
+      // Registra o momento em que a run apareceu no GitHub (informativo)
       const runStarted = new Date(run.started_at || run.created_at || run.run_started_at).getTime();
       if (!isNaN(runStarted) && runStarted > 0) {
-        runStartTime = Math.min(runStartTime || runStarted, runStarted);
+        runStartTime = runStarted;
       }
 
       const metaEl = document.getElementById("ct-run-meta");
