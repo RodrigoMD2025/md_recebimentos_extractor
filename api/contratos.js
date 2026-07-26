@@ -268,10 +268,10 @@ async function handleDelete(req, res) {
     return;
   }
 
-  const { codigo, deleteAll } = req.query || parseQuery(req.url);
+  const { codigo, execucao_id, run_number, deleteAll } = req.query || parseQuery(req.url);
 
-  if (!codigo && String(deleteAll) !== "true") {
-    return res.status(400).json({ error: "codigo ou deleteAll=true é obrigatório para exclusão." });
+  if (!codigo && !execucao_id && !run_number && String(deleteAll) !== "true") {
+    return res.status(400).json({ error: "codigo, execucao_id, run_number ou deleteAll=true é obrigatório para exclusão." });
   }
 
   try {
@@ -280,9 +280,22 @@ async function handleDelete(req, res) {
 
     if (String(deleteAll) === "true") {
       sql = `DELETE FROM contratos`;
-    } else {
+    } else if (codigo) {
       sql = `DELETE FROM contratos WHERE codigo = $1`;
       params = [codigo];
+    } else {
+      // Exclusão por execucao_id/run_number: limpa o relatório de extração
+      const conditions = [];
+      if (execucao_id) {
+        params.push(execucao_id);
+        conditions.push(`github_run_id = $${params.length}`);
+      }
+      if (run_number) {
+        params.push(run_number);
+        conditions.push(`github_run_number = $${params.length}`);
+      }
+      const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+      sql = `DELETE FROM extracoes_contratos ${where}`;
     }
 
     const result = await query(sql, params);
