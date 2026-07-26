@@ -1238,12 +1238,18 @@ function buildContratosRelatorioHtml(relatorio, opts = {}) {
   const inserts = Number(relatorio?.inserts) || 0;
   const updates = Number(relatorio?.updates) || 0;
   const total = Number(relatorio?.total_extraidos) || inserts + updates;
+  const wallMs = opts.wallElapsedSec != null ? Math.round(opts.wallElapsedSec) : null;
+  const scriptMs = relatorio?.duracao_segundos != null ? Math.round(relatorio.duracao_segundos) : null;
   const duracao =
-    relatorio?.duracao_segundos != null
-      ? formatDurationHMS(relatorio.duracao_segundos)
-      : opts.wallElapsedSec != null
-        ? formatDurationHMS(opts.wallElapsedSec)
+    wallMs != null
+      ? formatDurationHMS(wallMs)
+      : scriptMs != null
+        ? formatDurationHMS(scriptMs)
         : "--:--";
+  const duracaoExtra =
+    wallMs != null && scriptMs != null && wallMs !== scriptMs
+      ? `execução: ${formatDurationHMS(scriptMs)}`
+      : "";
   const mensagem = relatorio?.mensagem || "";
   const hasNew = inserts > 0;
   const title = opts.title || "Relatório da extração";
@@ -1260,7 +1266,7 @@ function buildContratosRelatorioHtml(relatorio, opts = {}) {
           <p class="text-sm font-semibold text-gray-800 dark:text-gray-100">${title}</p>
           ${criadoEm ? `<p class="text-[11px] text-gray-400 mt-0.5">${criadoEm}${runNumber ? ` · run #${runNumber}` : ""}</p>` : ""}
         </div>
-        <span class="text-[11px] text-gray-400 flex-shrink-0">duração ${duracao}</span>
+        <span class="text-[11px] text-gray-400 flex-shrink-0">duração ${duracao}${duracaoExtra ? `<br><span class="text-[10px]">${duracaoExtra}</span>` : ""}</span>
       </div>
       <div class="grid grid-cols-3 gap-2 mb-3">
         <div class="ct-stat-pill ${hasNew ? "ct-stat-new" : ""}">
