@@ -1315,34 +1315,63 @@ function startProgressMonitor(totalJobs, startTimeOverride) {
       const isQueued = status === "queued" || status === "waiting" || status === "requested";
       setStatusBadge(isQueued ? "na fila" : "executando", isQueued ? "wait" : "run");
 
-      // Progresso baseado nos jobs da matrix (cada ano = um job)
+      // Progresso granular: passos dentro de cada job da matrix
       if (run.jobs && run.jobs.length > 0) {
-        const done = run.jobs.filter((j) => j.conclusion === "success").length;
-        const total = run.jobs.length;
-        const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+        const totalJobsCount = run.jobs.length;
+        const doneJobs = run.jobs.filter((j) => j.conclusion === "success").length;
+        const totalSteps = run.jobs.reduce((s, j) => s + (j.steps?.length || 0), 0);
+        const doneSteps = run.jobs.reduce((s, j) => s + (j.steps?.filter((st) => st.status === "completed" || st.conclusion).length || 0), 0);
+        const pct = totalSteps > 0 ? Math.round((doneSteps / totalSteps) * 100) : totalJobsCount > 0 ? Math.round((doneJobs / totalJobsCount) * 100) : 0;
 
         setProgressBar(Math.min(92, pct), "bg-lime-500");
         const pctEl = document.getElementById("receb-progress-pct");
         if (pctEl) pctEl.textContent = `${pct}%`;
 
+        const elapsed = (Date.now() - startTime) / 1000;
         const infoEl = document.getElementById("receb-current-info");
         if (infoEl) {
           const currentJob = run.jobs.find((j) => j.status === "in_progress" || j.status === "queued");
-          const parts = [`${done}/${total} anos concluídos`];
+          const parts = [`${doneJobs}/${totalJobsCount} anos`];
+          if (totalSteps > 0) parts.push(`${doneSteps}/${totalSteps} passos`);
           if (currentJob) parts.push(`atual: ${currentJob.name}`);
           infoEl.textContent = parts.join(" · ");
         }
 
+        // ETA baseado no tempo médio por job concluído
         const liveEl = document.getElementById("receb-live-info");
         if (liveEl) {
           const runningJobs = run.jobs.filter((j) => j.status === "in_progress");
-          const steps = runningJobs.length > 0 && runningJobs[0].steps
+          const runningSteps = runningJobs.length > 0 && runningJobs[0].steps
             ? runningJobs[0].steps.filter((s) => s.status === "in_progress").map((s) => s.name)
             : [];
           const parts = [];
-          if (steps.length) parts.push(`Passo: ${steps[0]}`);
-          if (summary?.job_name) parts.push(`Job: ${summary.job_name}`);
-          liveEl.textContent = parts.length ? parts.join(" · ") : "Executando no GitHub Actions...";
+          if (runningSteps.length) parts.push(`Passo: ${runningSteps[0]}`);
+
+          // ETA: média de tempo por job concluído × jobs restantes
+          if (doneJobs > 0) {
+            const avgPerJob = elapsed / doneJobs;
+            const remaining = Math.max(0, ((totalJobsCount - doneJobs) * avgPerJob) - (totalSteps > 0 ? 0 : 0));
+            if (remaining > 30) {
+              const m = Math.floor(remaining / 60);
+              const s = Math.floor(remaining % 60);
+              parts.push(`ETA ~${m}:${String(s).padStart(2, "0")}`);
+            }
+          } else if (totalSteps > 0) {
+            // ETA por passos se ainda nenhum job completo
+            const avgPerStep = elapsed / doneSteps;
+            const remainingSteps = totalSteps - doneSteps;
+            if (avgPerStep > 0 && remainingSteps > 0) {
+              const rem = Math.round(remainingSteps * avgPerStep);
+              if (rem > 30) {
+                const m = Math.floor(rem / 60);
+                const s = Math.floor(rem % 60);
+                parts.push(`ETA ~${m}:${String(s).padStart(2, "0")}`);
+              }
+            }
+          }
+
+          if (parts.length === 0) parts.push("Executando no GitHub Actions...");
+          liveEl.textContent = parts.join(" · ");
         }
       } else {
         // Fallback: estimativa por tempo
