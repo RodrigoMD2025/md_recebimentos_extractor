@@ -239,8 +239,12 @@ function navigateTo(section) {
   if (section === "settings") syncFormFields();
   if (section === "run") {
     checkGithubConnection();
-    resumeContratosMonitorIfActive().then((resumed) => {
-      if (!resumed) loadLastContratosRelatorio();
+    resumeRecebimentosMonitorIfActive().then((recResumed) => {
+      if (!recResumed) {
+        resumeContratosMonitorIfActive().then((ctResumed) => {
+          if (!ctResumed) loadLastContratosRelatorio();
+        });
+      }
     });
   }
   if (section === "dados") {
@@ -972,7 +976,6 @@ function bindFiltroEvents() {
 
 async function triggerWorkflow() {
   const branch = "main";
-
   const selectedYears = [];
   document.querySelectorAll("#year-checkboxes input:checked").forEach((cb) => {
     selectedYears.push(cb.value);
@@ -984,7 +987,9 @@ async function triggerWorkflow() {
   }
 
   const btn = document.getElementById("run-btn");
+  const errorEl = document.getElementById("error-monitor-recebimentos");
   if (btn) btn.disabled = true;
+  if (errorEl) { errorEl.classList.add("hidden"); errorEl.innerHTML = ""; }
 
   try {
     const body = { ref: branch, inputs: {} };
@@ -1002,11 +1007,26 @@ async function triggerWorkflow() {
       timestamp: new Date().toISOString(),
     }));
 
-    document.getElementById("active-monitor")?.classList.remove("hidden");
+    const monitor = document.getElementById("active-monitor");
+    if (monitor) monitor.classList.remove("hidden");
     startProgressMonitor(selectedYears.length);
     setTimeout(() => loadRuns(true), 4000);
   } catch (err) {
-    toast(`Erro ao iniciar workflow: ${err.message}`, "error");
+    const msg = err.message || "Erro desconhecido";
+    toast(`Erro: ${msg}`, "error");
+    if (errorEl) {
+      errorEl.classList.remove("hidden");
+      errorEl.innerHTML = `
+        <div class="flex items-start gap-3">
+          <span class="text-red-500 text-lg">⚠️</span>
+          <div class="text-sm">
+            <p class="font-semibold text-red-600 mb-1">Falha ao disparar extração</p>
+            <p class="text-red-500">${msg}</p>
+            <p class="text-gray-500 mt-2 text-xs">Verifique se o GITHUB_TOKEN está configurado nas variáveis de ambiente da Vercel.</p>
+          </div>
+        </div>
+      `;
+    }
   } finally {
     if (btn) btn.disabled = false;
   }
@@ -1131,59 +1151,249 @@ function clearSettings() {
   toast("Preferencias da interface limpas", "info");
 }
 
-function startProgressMonitor(totalJobs) {
+function stopProgressMonitor() {
   if (progressMonitorInterval) {
     clearInterval(progressMonitorInterval);
+    progressMonitorInterval = null;
   }
+  if (window._recebimentosTimerInterval) {
+    clearInterval(window._recebimentosTimerInterval);
+    window._recebimentosTimerInterval = null;
+  }
+}
+
+function startProgressMonitor(totalJobs, startTimeOverride) {
+  stopProgressMonitor();
 
   const monitorEl = document.getElementById("active-monitor");
   if (!monitorEl) return;
 
-  let completedJobs = 0;
-  let startTime = Date.now();
+  const startTime = startTimeOverride || Date.now();
+  const sinceIso = new Date(startTime - 5000).toISOString();
+  let trackedRunId = null;
+  let trackedRunNumber = null;
+  let finished = false;
 
+  monitorEl.classList.remove("hidden");
   monitorEl.innerHTML = `
     <div class="space-y-3">
-      <div class="flex items-center justify-between text-sm">
-        <span>Execução em andamento...</span>
-        <span id="progress-text">0/${totalJobs} anos concluídos</span>
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <p class="text-sm font-semibold text-gray-800 dark:text-gray-100">Extração de recebimentos</p>
+          <p id="receb-run-meta" class="text-[11px] text-gray-400 mt-0.5">Preparando...</p>
+        </div>
+        <div class="text-right flex-shrink-0">
+          <span id="receb-progress-status" class="text-xs font-semibold text-gray-500">...</span>
+          <p id="receb-elapsed" class="text-xs font-mono text-gray-500 dark:text-gray-400 mt-1">00:00</p>
+        </div>
       </div>
-      <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
-        <div id="progress-bar" class="bg-lime-500 h-2.5 rounded-full transition-all duration-500" style="width: 0%"></div>
+      <div>
+        <div class="flex items-center justify-between text-[11px] text-gray-500 mb-1.5">
+          <span id="receb-current-info">Preparando...</span>
+          <span id="receb-progress-pct">0%</span>
+        </div>
+        <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5 overflow-hidden">
+          <div id="receb-progress-bar" class="bg-lime-500 h-2.5 rounded-full transition-all duration-500" style="width: 4%"></div>
+        </div>
       </div>
-      <div id="progress-eta" class="text-xs text-gray-500">Estimando tempo...</div>
+      <div id="receb-live-info" class="text-xs text-gray-500 dark:text-gray-400">
+        Aguardando execução no GitHub Actions...
+      </div>
     </div>
   `;
 
-  progressMonitorInterval = setInterval(async () => {
+  // Timer contínuo desde o clique
+  window._recebimentosTimerInterval = setInterval(() => {
+    const el = document.getElementById("receb-elapsed");
+    if (el) el.textContent = formatDurationHMS((Date.now() - startTime) / 1000);
+  }, 200);
+
+  const setStatusBadge = (label, kind) => {
+    const el = document.getElementById("receb-progress-status");
+    if (!el) return;
+    el.textContent = label;
+    el.className = `text-xs font-semibold ${kind === "ok" ? "text-emerald-600" : kind === "fail" ? "text-red-600" : kind === "run" ? "text-blue-600" : "text-gray-500"}`;
+  };
+
+  const setProgressBar = (percent, barClass) => {
+    const bar = document.getElementById("receb-progress-bar");
+    if (!bar) return;
+    const pct = Math.max(0, Math.min(100, Number(percent) || 0));
+    bar.style.width = `${pct}%`;
+    if (barClass) {
+      bar.className = `${barClass} h-2.5 rounded-full transition-all duration-500`;
+    }
+  };
+
+  const finalize = async (run, kind) => {
+    if (finished) return;
+    finished = true;
+    stopProgressMonitor();
+
+    const wallElapsed = (Date.now() - startTime) / 1000;
+    const elapsedEl = document.getElementById("receb-elapsed");
+    if (elapsedEl) elapsedEl.textContent = formatDurationHMS(wallElapsed);
+
+    if (kind === "success") {
+      setStatusBadge("concluído", "ok");
+      setProgressBar(100, "bg-emerald-500");
+      const pctEl = document.getElementById("receb-progress-pct");
+      if (pctEl) pctEl.textContent = "100%";
+      const infoEl = document.getElementById("receb-current-info");
+      if (infoEl) infoEl.textContent = "Finalizado";
+    } else {
+      setStatusBadge(kind === "failure" ? "falhou" : "cancelado", "fail");
+      setProgressBar(0, "bg-red-500");
+    }
+
+    const liveEl = document.getElementById("receb-live-info");
+    if (liveEl) {
+      liveEl.innerHTML = kind === "success"
+        ? "Extração concluída. Carregando resultados..."
+        : kind === "failure"
+          ? `A execução falhou. ${run?.html_url ? `<a class="text-indigo-600 underline" href="${run.html_url}" target="_blank" rel="noopener">Abrir no GitHub ↗</a>` : "Verifique o GitHub Actions."}`
+          : "A execução foi cancelada.";
+    }
+
+    setTimeout(() => {
+      monitorEl.classList.add("hidden");
+      loadRuns();
+    }, 3000);
+  };
+
+  const tick = async () => {
+    if (finished) return;
     try {
       const data = await githubApiFetch("/api/github-runs", {
-        params: { per_page: 1, page: 1 },
+        params: { per_page: 3, page: 1, workflow_id: "recebimentos.yml", include_jobs: "1" },
       });
-      const latestRun = data?.workflow_runs?.[0];
 
-      if (latestRun) {
-        const status = latestRun.conclusion || latestRun.status;
-        if (status === "success" || status === "failure" || status === "cancelled") {
-          completedJobs = totalJobs;
-          updateProgress(completedJobs, totalJobs, startTime);
-          clearInterval(progressMonitorInterval);
-          setTimeout(() => {
-            monitorEl.classList.add("hidden");
-            loadRuns();
-          }, 2000);
-          return;
+      const runs = data?.workflow_runs || [];
+      let run = null;
+
+      if (trackedRunId) {
+        run = runs.find((r) => String(r.id) === String(trackedRunId)) || null;
+      }
+
+      if (!run) {
+        run = runs.find((r) => {
+          if (r.conclusion) return false;
+          const created = new Date(r.created_at || r.run_started_at || 0).getTime();
+          return created >= startTime - 5000;
+        }) || null;
+      }
+
+      if (!run) {
+        setStatusBadge("na fila", "wait");
+        const infoEl = document.getElementById("receb-current-info");
+        if (infoEl) infoEl.textContent = "Aguardando no GitHub Actions...";
+        setProgressBar(6, "bg-lime-500");
+        const liveEl = document.getElementById("receb-live-info");
+        if (liveEl) liveEl.textContent = "Aguardando a execução aparecer no GitHub Actions...";
+        return;
+      }
+
+      trackedRunId = run.id;
+      trackedRunNumber = run.run_number;
+
+      const metaEl = document.getElementById("receb-run-meta");
+      if (metaEl) {
+        metaEl.innerHTML = `Run <strong>#${run.run_number}</strong> · ${run.event || "dispatch"}` +
+          (run.html_url ? ` · <a href="${run.html_url}" target="_blank" rel="noopener" class="text-indigo-600 dark:text-indigo-400 hover:underline">abrir ↗</a>` : "");
+      }
+
+      const summary = run.job_summary || null;
+      const conclusion = run.conclusion;
+      const status = conclusion || run.status;
+
+      if (conclusion === "success") { await finalize(run, "success"); return; }
+      if (conclusion === "failure" || conclusion === "cancelled" || conclusion === "timed_out") {
+        await finalize(run, conclusion === "cancelled" ? "cancelled" : "failure");
+        return;
+      }
+
+      const isQueued = status === "queued" || status === "waiting" || status === "requested";
+      setStatusBadge(isQueued ? "na fila" : "executando", isQueued ? "wait" : "run");
+
+      // Progresso baseado nos jobs da matrix (cada ano = um job)
+      if (run.jobs && run.jobs.length > 0) {
+        const done = run.jobs.filter((j) => j.conclusion === "success").length;
+        const total = run.jobs.length;
+        const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+
+        setProgressBar(Math.min(92, pct), "bg-lime-500");
+        const pctEl = document.getElementById("receb-progress-pct");
+        if (pctEl) pctEl.textContent = `${pct}%`;
+
+        const infoEl = document.getElementById("receb-current-info");
+        if (infoEl) {
+          const currentJob = run.jobs.find((j) => j.status === "in_progress" || j.status === "queued");
+          const parts = [`${done}/${total} anos concluídos`];
+          if (currentJob) parts.push(`atual: ${currentJob.name}`);
+          infoEl.textContent = parts.join(" · ");
         }
 
+        const liveEl = document.getElementById("receb-live-info");
+        if (liveEl) {
+          const runningJobs = run.jobs.filter((j) => j.status === "in_progress");
+          const steps = runningJobs.length > 0 && runningJobs[0].steps
+            ? runningJobs[0].steps.filter((s) => s.status === "in_progress").map((s) => s.name)
+            : [];
+          const parts = [];
+          if (steps.length) parts.push(`Passo: ${steps[0]}`);
+          if (summary?.job_name) parts.push(`Job: ${summary.job_name}`);
+          liveEl.textContent = parts.length ? parts.join(" · ") : "Executando no GitHub Actions...";
+        }
+      } else {
+        // Fallback: estimativa por tempo
         const elapsed = (Date.now() - startTime) / 1000;
         const estimatedTotal = totalJobs * 180;
-        const estimatedProgress = Math.min(100, (elapsed / estimatedTotal) * 100);
-        updateProgress(estimatedProgress, totalJobs, startTime, elapsed);
+        const pct = Math.min(85, Math.round((elapsed / estimatedTotal) * 100));
+        setProgressBar(pct, "bg-lime-500");
+        const pctEl = document.getElementById("receb-progress-pct");
+        if (pctEl) pctEl.textContent = `${pct}%`;
+        const infoEl = document.getElementById("receb-current-info");
+        if (infoEl) infoEl.textContent = `${totalJobs} anos · estimando progresso...`;
       }
     } catch (err) {
-      console.error("Erro ao monitorar progresso:", err);
+      console.error("Erro ao monitorar recebimentos:", err);
+      const liveEl = document.getElementById("receb-live-info");
+      if (liveEl) liveEl.textContent = `Erro ao consultar GitHub: ${err.message}`;
     }
-  }, 3000);
+  };
+
+  tick();
+  progressMonitorInterval = setInterval(tick, 4000);
+}
+
+async function resumeRecebimentosMonitorIfActive() {
+  try {
+    const data = await githubApiFetch("/api/github-runs", {
+      params: { per_page: 5, page: 1, workflow_id: "recebimentos.yml", include_jobs: "1" },
+    });
+    const runs = data?.workflow_runs || [];
+    const now = Date.now();
+    const activeRun = runs.find((r) => {
+      if (r.conclusion) return false;
+      const created = new Date(r.created_at || r.run_started_at || 0).getTime();
+      return !isNaN(created) && now - created < 90 * 60 * 1000;
+    });
+    if (!activeRun) return false;
+
+    const monitorEl = document.getElementById("active-monitor");
+    if (monitorEl && !monitorEl.classList.contains("hidden")) return true;
+
+    const totalJobs = activeRun.jobs?.length || 2;
+
+    const runStarted = new Date(activeRun.started_at || activeRun.created_at || activeRun.run_started_at).getTime();
+    const baseTime = !isNaN(runStarted) && runStarted > 0 ? runStarted : Date.now();
+
+    startProgressMonitor(totalJobs, baseTime);
+    return true;
+  } catch (err) {
+    console.warn("Erro ao verificar execução ativa de recebimentos:", err.message);
+    return false;
+  }
 }
 
 let progressMonitorContratosInterval = null;
