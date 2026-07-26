@@ -18,9 +18,6 @@ on:
   repository_dispatch:
     types: [run-recebimentos]
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   extrair-recebimentos:
     runs-on: ubuntu-latest
@@ -32,10 +29,10 @@ jobs:
 
     steps:
       - name: Checkout do código
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.11"
           cache: "pip"

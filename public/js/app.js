@@ -1013,6 +1013,7 @@ async function triggerWorkflow() {
 async function triggerWorkflowContratos() {
   const btn = document.getElementById("run-contratos-btn");
   const errorEl = document.getElementById("error-monitor-contratos");
+  const lastReportEl = document.getElementById("last-contratos-report");
   if (btn) btn.disabled = true;
   if (errorEl) { errorEl.classList.add("hidden"); errorEl.innerHTML = ""; }
 
@@ -1024,6 +1025,8 @@ async function triggerWorkflowContratos() {
 
     toast("Extração de contratos iniciada! 🚀", "success");
 
+    // Esconde relatório anterior e mostra monitor ao vivo
+    if (lastReportEl) { lastReportEl.classList.add("hidden"); lastReportEl.innerHTML = ""; }
     const monitor = document.getElementById("active-monitor-contratos");
     if (monitor) {
       monitor.classList.remove("hidden");
