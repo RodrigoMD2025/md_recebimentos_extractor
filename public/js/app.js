@@ -1531,15 +1531,21 @@ function startProgressMonitorContratos(startTimeOverride) {
       });
 
       const runs = data?.workflow_runs || [];
-      // Preferir a run que iniciou após o disparo (ou a mais recente)
-      let run =
-        runs.find((r) => trackedRunId && String(r.id) === String(trackedRunId)) ||
-        runs.find((r) => {
+      let run = null;
+
+      // Já identificamos uma run anteriormente → reencontra (pode estar concluída)
+      if (trackedRunId) {
+        run = runs.find((r) => String(r.id) === String(trackedRunId)) || null;
+      }
+
+      // Primeiro tick ainda sem run: procura uma criada após o disparo e ainda ativa
+      if (!run) {
+        run = runs.find((r) => {
+          if (r.conclusion) return false;
           const created = new Date(r.created_at || r.run_started_at || 0).getTime();
-          return created >= startTime - 60000;
-        }) ||
-        runs[0] ||
-        null;
+          return created >= startTime - 5000;
+        }) || null;
+      }
 
       if (!run) {
         setStatusBadge("na fila", "wait");
