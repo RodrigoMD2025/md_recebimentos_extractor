@@ -1195,63 +1195,6 @@ function formatDurationHMS(totalSeconds) {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-function ctStepIcon(step) {
-  const status = step?.status;
-  const conclusion = step?.conclusion;
-  if (status === "completed" || conclusion === "success") {
-    return '<span class="ct-step-icon ct-step-ok" title="Concluído">✓</span>';
-  }
-  if (conclusion === "failure") {
-    return '<span class="ct-step-icon ct-step-fail" title="Falhou">✕</span>';
-  }
-  if (conclusion === "cancelled" || conclusion === "skipped") {
-    return '<span class="ct-step-icon ct-step-skip" title="Ignorado">–</span>';
-  }
-  if (status === "in_progress") {
-    return '<span class="ct-step-icon ct-step-run" title="Em andamento">●</span>';
-  }
-  return '<span class="ct-step-icon ct-step-wait" title="Pendente">○</span>';
-}
-
-function renderContratosSteps(jobs) {
-  const listEl = document.getElementById("ct-steps-list");
-  if (!listEl) return;
-
-  const job = (jobs && jobs[0]) || null;
-  const steps = (job?.steps || []).filter((s) => s && s.name);
-  if (!steps.length) {
-    listEl.innerHTML = `
-      <li class="ct-step ct-step-muted">
-        <span class="ct-step-icon ct-step-wait">○</span>
-        <span>Aguardando etapas do GitHub Actions...</span>
-      </li>`;
-    return;
-  }
-
-  listEl.innerHTML = steps
-    .map((step) => {
-      const active = step.status === "in_progress" ? " ct-step-active" : "";
-      const done =
-        step.status === "completed" || step.conclusion === "success"
-          ? " ct-step-done"
-          : "";
-      const fail = step.conclusion === "failure" ? " ct-step-failed" : "";
-      return `
-        <li class="ct-step${active}${done}${fail}">
-          ${ctStepIcon(step)}
-          <span class="ct-step-name">${step.name}</span>
-          <span class="ct-step-meta">${
-            step.status === "in_progress"
-              ? "em andamento"
-              : step.conclusion === "success"
-                ? "ok"
-                : step.conclusion || step.status || ""
-          }</span>
-        </li>`;
-    })
-    .join("");
-}
-
 function setContratosMonitorProgress(percent, barClass) {
   const barEl = document.getElementById("ct-progress-bar");
   if (!barEl) return;
@@ -1353,24 +1296,14 @@ function buildContratosRelatorioHtml(relatorio, opts = {}) {
 }
 
 function renderContratosRelatorioFinal(relatorio, run, wallElapsedSec) {
-  const reportEl = document.getElementById("ct-report");
-  if (!reportEl) return;
-  reportEl.classList.remove("hidden");
-  reportEl.innerHTML = buildContratosRelatorioHtml(relatorio, {
+  const lastEl = document.getElementById("last-contratos-report");
+  if (!lastEl) return;
+  lastEl.classList.remove("hidden");
+  lastEl.innerHTML = buildContratosRelatorioHtml(relatorio, {
     title: "Relatório da extração",
     run,
     wallElapsedSec,
   });
-  // Atualiza também o card de "última extração"
-  const lastEl = document.getElementById("last-contratos-report");
-  if (lastEl && relatorio) {
-    lastEl.classList.remove("hidden");
-    lastEl.innerHTML = buildContratosRelatorioHtml(relatorio, {
-      title: "Última extração de contratos",
-      run,
-      wallElapsedSec,
-    });
-  }
 }
 
 async function loadLastContratosRelatorio() {
@@ -1404,7 +1337,8 @@ function startProgressMonitorContratos() {
   if (!monitorEl) return;
 
   const startTime = Date.now();
-  const sinceIso = new Date(startTime - 15000).toISOString(); // margem p/ clock skew
+  let runStartTime = null;
+  const sinceIso = new Date(startTime - 15000).toISOString();
   let trackedRunId = null;
   let trackedRunNumber = null;
   let finished = false;
@@ -1441,26 +1375,18 @@ function startProgressMonitorContratos() {
         </div>
       </div>
 
-      <div>
-        <p class="text-[11px] font-medium uppercase tracking-wide text-gray-400 mb-2">Etapas do GitHub Actions</p>
-        <ul id="ct-steps-list" class="ct-steps space-y-1.5"></ul>
-      </div>
-
       <div id="ct-live-info" class="text-xs text-gray-500 dark:text-gray-400">
         Disparo enviado. Buscando a execução no repositório...
       </div>
-
-      <div id="ct-report" class="hidden"></div>
     </div>
   `;
 
-  renderContratosSteps([]);
-
-  // Timer local em segundos (independente do poll)
+  // Timer sincronizado com início real da run no GitHub
   progressMonitorContratosTimer = setInterval(() => {
     const elapsedEl = document.getElementById("ct-elapsed");
     if (elapsedEl) {
-      elapsedEl.textContent = formatDurationHMS((Date.now() - startTime) / 1000);
+      const base = runStartTime || startTime;
+      elapsedEl.textContent = formatDurationHMS((Date.now() - base) / 1000);
     }
   }, 1000);
 
@@ -1476,11 +1402,9 @@ function startProgressMonitorContratos() {
     finished = true;
     stopContratosMonitors();
 
-    const wallElapsed = (Date.now() - startTime) / 1000;
+    const wallElapsed = (Date.now() - (runStartTime || startTime)) / 1000;
     const elapsedEl = document.getElementById("ct-elapsed");
     if (elapsedEl) elapsedEl.textContent = formatDurationHMS(wallElapsed);
-
-    if (run?.jobs) renderContratosSteps(run.jobs);
 
     if (kind === "success") {
       setStatusBadge("concluído", "ok");
@@ -1501,7 +1425,6 @@ function startProgressMonitorContratos() {
         delayMs: 2000,
       });
 
-      // Fallback: se o relatório ainda não chegou, compara totais
       let reportData = relatorio;
       if (!reportData && baselineTotal != null) {
         try {
@@ -1529,38 +1452,29 @@ function startProgressMonitorContratos() {
         }
       }
 
+      // Esconde monitor e mostra relatório no card persistente
+      monitorEl.classList.add("hidden");
       renderContratosRelatorioFinal(reportData, run, wallElapsed);
-      if (liveEl) {
-        liveEl.textContent = `Finalizado em ${new Date(run?.updated_at || Date.now()).toLocaleString("pt-BR")}`;
-      }
-      // Mantém o painel visível por mais tempo para leitura do relatório
-      setTimeout(() => {
-        // não esconde automaticamente se o usuário ainda está na seção
-      }, 0);
       return;
     }
 
     // failure / cancelled
+    monitorEl.classList.add("hidden");
     setStatusBadge(kind === "failure" ? "falhou" : "cancelado", "fail");
-    setContratosMonitorProgress(100, "bg-red-500");
     const liveEl = document.getElementById("ct-live-info");
     if (liveEl) {
       liveEl.innerHTML = kind === "failure"
         ? `A execução falhou. ${run?.html_url ? `<a class="text-indigo-600 underline" href="${run.html_url}" target="_blank" rel="noopener">Abrir no GitHub</a>` : "Verifique o GitHub Actions."}`
         : "A execução foi cancelada.";
     }
-    const reportEl = document.getElementById("ct-report");
-    if (reportEl) {
-      // tenta pegar relatório de erro se o extrator salvou
-      fetchContratosRelatorio({
-        runNumber: run?.run_number || trackedRunNumber,
-        sinceIso,
-        attempts: 3,
-        delayMs: 1500,
-      }).then((rel) => {
-        if (rel) renderContratosRelatorioFinal(rel, run, wallElapsed);
-      });
-    }
+    fetchContratosRelatorio({
+      runNumber: run?.run_number || trackedRunNumber,
+      sinceIso,
+      attempts: 3,
+      delayMs: 1500,
+    }).then((rel) => {
+      if (rel) renderContratosRelatorioFinal(rel, run, wallElapsed);
+    });
   };
 
   const tick = async () => {
@@ -1599,6 +1513,12 @@ function startProgressMonitorContratos() {
       trackedRunId = run.id;
       trackedRunNumber = run.run_number;
 
+      // Sincroniza timer com o início real da run no GitHub
+      const runStarted = new Date(run.started_at || run.created_at || run.run_started_at).getTime();
+      if (!isNaN(runStarted) && runStarted > 0) {
+        runStartTime = Math.min(runStartTime || runStarted, runStarted);
+      }
+
       const metaEl = document.getElementById("ct-run-meta");
       if (metaEl) {
         const eventLabel = run.event || "dispatch";
@@ -1608,8 +1528,6 @@ function startProgressMonitorContratos() {
             : ""
         }`;
       }
-
-      if (run.jobs) renderContratosSteps(run.jobs);
 
       const summary = run.job_summary || null;
       const conclusion = run.conclusion;
