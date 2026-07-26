@@ -239,7 +239,9 @@ function navigateTo(section) {
   if (section === "settings") syncFormFields();
   if (section === "run") {
     checkGithubConnection();
-    loadLastContratosRelatorio();
+    resumeContratosMonitorIfActive().then((resumed) => {
+      if (!resumed) loadLastContratosRelatorio();
+    });
   }
   if (section === "dados") {
     if (!dadosInicializado) {
@@ -1339,13 +1341,44 @@ async function loadLastContratosRelatorio() {
   }
 }
 
-function startProgressMonitorContratos() {
+async function resumeContratosMonitorIfActive() {
+  try {
+    const data = await githubApiFetch("/api/github-runs", {
+      params: { per_page: 5, page: 1, workflow_id: "contratos.yml", include_jobs: "1" },
+    });
+    const runs = data?.workflow_runs || [];
+    const now = Date.now();
+    const activeRun = runs.find((r) => {
+      if (r.conclusion) return false;
+      const created = new Date(r.created_at || r.run_started_at || 0).getTime();
+      return !isNaN(created) && now - created < 90 * 60 * 1000;
+    });
+    if (!activeRun) return false;
+
+    const monitorEl = document.getElementById("active-monitor-contratos");
+    if (monitorEl && !monitorEl.classList.contains("hidden")) return true;
+
+    const runStarted = new Date(activeRun.started_at || activeRun.created_at || activeRun.run_started_at).getTime();
+    const baseTime = !isNaN(runStarted) && runStarted > 0 ? runStarted : Date.now();
+
+    const lastReportEl = document.getElementById("last-contratos-report");
+    if (lastReportEl) { lastReportEl.classList.add("hidden"); lastReportEl.innerHTML = ""; }
+
+    startProgressMonitorContratos(baseTime);
+    return true;
+  } catch (err) {
+    console.warn("Erro ao verificar execução ativa de contratos:", err.message);
+    return false;
+  }
+}
+
+function startProgressMonitorContratos(startTimeOverride) {
   stopContratosMonitors();
 
   const monitorEl = document.getElementById("active-monitor-contratos");
   if (!monitorEl) return;
 
-  const startTime = Date.now();
+  const startTime = startTimeOverride || Date.now();
   let runStartTime = null;
   const sinceIso = new Date(startTime - 15000).toISOString();
   let trackedRunId = null;
