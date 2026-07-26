@@ -226,7 +226,7 @@ function navigateTo(section) {
   if (target) target.classList.remove("hidden");
 
   const titles = {
-    dashboard: "Dashboard",
+    dashboard: "Recebimentos",
     run: "Executar Extração",
     history: "Histórico",
     dados: "Dados",
@@ -2530,7 +2530,7 @@ navigateTo = function(section) {
   _originalNavigateTo(section);
 
   const titles = {
-    dashboard: "Dashboard",
+    dashboard: "Recebimentos",
     run: "Executar Extração",
     history: "Histórico",
     dados: "Dados",
