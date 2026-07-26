@@ -322,16 +322,25 @@ async function loadRuns(forHistory = false) {
   console.debug('[loadRuns] iniciando carga de runs'); debugMsg('loadRuns: iniciando');
 
   try {
-    // Passa with_inputs=true para enriquecer as runs com os anos processados
-    const data = await githubApiFetch("/api/github-runs", {
-      params: { per_page: 50, page: 1, with_inputs: "true" },
-    });
-    cfg.owner = data.owner || cfg.owner;
-    cfg.repo = data.repo || cfg.repo;
-    cfg.workflowId = data.workflowId || cfg.workflowId;
-    cfg.hasGithubToken = Boolean(data.hasToken);
+    const [recData, ctData] = await Promise.all([
+      githubApiFetch("/api/github-runs", {
+        params: { per_page: 50, page: 1, with_inputs: "true", workflow_id: "recebimentos.yml" },
+      }),
+      githubApiFetch("/api/github-runs", {
+        params: { per_page: 50, page: 1, with_inputs: "true", workflow_id: "contratos.yml" },
+      }),
+    ]);
+
+    cfg.owner = recData.owner || ctData.owner || cfg.owner;
+    cfg.repo = recData.repo || ctData.repo || cfg.repo;
+    cfg.workflowId = recData.workflowId || cfg.workflowId;
+    cfg.hasGithubToken = Boolean(recData.hasToken || ctData.hasToken);
     setGithubConfigUI();
-    allRuns = data?.workflow_runs ?? [];
+
+    const recRuns = (recData?.workflow_runs ?? []).map((r) => ({ ...r, workflow_type: "recebimentos" }));
+    const ctRuns = (ctData?.workflow_runs ?? []).map((r) => ({ ...r, workflow_type: "contratos" }));
+    const combined = [...recRuns, ...ctRuns].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    allRuns = combined;
 
     updateStats(allRuns);
     renderCharts(allRuns);
@@ -820,7 +829,8 @@ function fillTable(runs, tbodyId, tableId, placeholderId, withTrigger, execucaoY
       const dur = end ? fmtDuration(end - start) : "…";
       const state = run.conclusion || run.status;
       const badge = `<span class="badge badge-${state}">${statusEmoji(state)} ${statusLabel(state)}</span>`;
-      
+      const wtype = run.workflow_type || "recebimentos";
+
       let displayTitle = run.display_title || run.name || run.head_commit?.message?.split("\n")[0] || "—";
       const yearsFromTitleMatch = displayTitle.match(/Ano\(s\):\s*([\d,\s]+)/i);
       displayTitle = displayTitle.split(/ - Ano\(s\):/i)[0].trim();
@@ -837,38 +847,38 @@ function fillTable(runs, tbodyId, tableId, placeholderId, withTrigger, execucaoY
         ? `<td class="px-5 py-3.5 text-gray-500">${triggerLabel(run.event)}</td>`
         : "";
 
-      // Extrair anos dos inputs da execução ou do título, priorizando dados do banco
-      const execucaoId = String(run.run_number || "");
-      const dbYears = execucaoYearsMap[execucaoId] || [];
-      let yearsArr = [];
-      const runInputs = run.inputs || {};
-      const anosInput = runInputs.anos || runInputs.ano || (yearsFromTitleMatch ? yearsFromTitleMatch[1] : null);
-
-      if (dbYears.length > 0) {
-        yearsArr = dbYears;
-      } else if (anosInput) {
-        yearsArr = String(anosInput).split(",").map((y) => y.trim()).filter(Boolean);
-      }
-
-      let yearsContent = "";
-      if (yearsArr.length > 1) {
-        // Mais de um ano: cria um select (droplist) conforme sugerido
-        yearsContent = `
-          <select class="text-[11px] font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border-none rounded-full px-2 py-0.5 focus:ring-0 cursor-pointer outline-none">
-            <option selected disabled>${yearsArr.length} Anos...</option>
-            ${yearsArr.map(y => `<option style="color:#000 !important; background:#fff !important;">${y}</option>`).join("")}
-          </select>
-        `;
-      } else if (yearsArr.length === 1) {
-        // Apenas um ano: badge simples
-        yearsContent = `<span class="text-[11px] font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">${esc(yearsArr[0])}</span>`;
+      // Conteúdo da coluna Ano / Tipo
+      let yearsContent;
+      if (wtype === "contratos") {
+        yearsContent = `<span class="text-[11px] font-medium px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-300">Contratos</span>`;
       } else {
-        // Fallback para Agendado/Auto/Vazio
-        let fallback = "—";
-        if (run.event === "schedule") fallback = "Agendado";
-        else if (run.event === "push") fallback = "Auto";
-        
-        yearsContent = `<span class="text-xs text-gray-400">${esc(fallback)}</span>`;
+        const execucaoId = String(run.run_number || "");
+        const dbYears = execucaoYearsMap[execucaoId] || [];
+        let yearsArr = [];
+        const runInputs = run.inputs || {};
+        const anosInput = runInputs.anos || runInputs.ano || (yearsFromTitleMatch ? yearsFromTitleMatch[1] : null);
+
+        if (dbYears.length > 0) {
+          yearsArr = dbYears;
+        } else if (anosInput) {
+          yearsArr = String(anosInput).split(",").map((y) => y.trim()).filter(Boolean);
+        }
+
+        if (yearsArr.length > 1) {
+          yearsContent = `
+            <select class="text-[11px] font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border-none rounded-full px-2 py-0.5 focus:ring-0 cursor-pointer outline-none">
+              <option selected disabled>${yearsArr.length} Anos...</option>
+              ${yearsArr.map(y => `<option style="color:#000 !important; background:#fff !important;">${y}</option>`).join("")}
+            </select>
+          `;
+        } else if (yearsArr.length === 1) {
+          yearsContent = `<span class="text-[11px] font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">${esc(yearsArr[0])}</span>`;
+        } else {
+          let fallback = "—";
+          if (run.event === "schedule") fallback = "Agendado";
+          else if (run.event === "push") fallback = "Auto";
+          yearsContent = `<span class="text-xs text-gray-400">${esc(fallback)}</span>`;
+        }
       }
 
       const yearsCell = `<td class="px-5 py-3.5" data-run="${run.run_number}">
@@ -877,11 +887,7 @@ function fillTable(runs, tbodyId, tableId, placeholderId, withTrigger, execucaoY
         </div>
       </td>`;
 
-      // Debug visível no console
-      console.log(`[Table Render] Run #${run.run_number} | anosInput: ${anosInput} | Count: ${yearsArr.length}`);
-
-
-      const deleteBtn = `<button onclick="deleteRun('${run.id}', '${run.run_number}')" class="text-red-500 hover:text-red-700 ml-2" title="Excluir execução e dados">
+      const deleteBtn = `<button onclick="deleteRun('${run.id}', '${run.run_number}', '${wtype}')" class="text-red-500 hover:text-red-700 ml-2" title="Excluir execução e dados">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
         </svg>
@@ -908,7 +914,7 @@ function fillTable(runs, tbodyId, tableId, placeholderId, withTrigger, execucaoY
     .join("");
 }
 
-async function deleteRun(runId, runNumber) {
+async function deleteRun(runId, runNumber, wtype) {
   if (!confirm(`Tem certeza que deseja excluir a execução #${runNumber} e TODOS os dados associados a ela no banco de dados?`)) {
     return;
   }
@@ -916,8 +922,9 @@ async function deleteRun(runId, runNumber) {
   try {
     toast(`Excluindo execução #${runNumber}...`, "info");
     
-    // 1. Excluir dados no banco (usando runId e runNumber para garantir limpeza)
-    await githubApiFetch(`/api/recebimentos?execucao_id=${runId}&run_number=${runNumber}`, {
+    // 1. Excluir dados no banco (rota depende do tipo de workflow)
+    const apiPath = wtype === "contratos" ? "/api/contratos" : "/api/recebimentos";
+    await githubApiFetch(`${apiPath}?execucao_id=${runId}&run_number=${runNumber}`, {
       method: "DELETE"
     });
 
@@ -949,10 +956,14 @@ function loadMoreRuns() {
 
 function applyFilter() {
   const status = document.getElementById("filter-status")?.value || "all";
-  const filtered =
-    status === "all"
-      ? allRuns
-      : allRuns.filter((r) => (r.conclusion || r.status) === status);
+  const wtype = document.getElementById("filter-workflow")?.value || "all";
+  let filtered = allRuns;
+  if (wtype !== "all") {
+    filtered = filtered.filter((r) => (r.workflow_type || "recebimentos") === wtype);
+  }
+  if (status !== "all") {
+    filtered = filtered.filter((r) => (r.conclusion || r.status) === status);
+  }
   fillTable(
     filtered,
     "history-tbody",

@@ -349,13 +349,18 @@
               <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
               <span class="text-sm font-semibold">Todas as Execuções</span>
               <div class="flex items-center gap-2">
-              <select id="filter-status" onchange="applyFilter()" class="text-xs px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800">
-                <option value="all">Todos</option>
-                <option value="success">Sucesso</option>
-                <option value="failure">Falha</option>
-                <option value="cancelled">Cancelado</option>
-                <option value="in_progress">Em andamento</option>
-              </select>
+        <select id="filter-workflow" onchange="applyFilter()" class="text-xs px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800">
+          <option value="all">Todos</option>
+          <option value="recebimentos">Recebimentos</option>
+          <option value="contratos">Contratos</option>
+        </select>
+        <select id="filter-status" onchange="applyFilter()" class="text-xs px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800">
+          <option value="all">Todos</option>
+          <option value="success">Sucesso</option>
+          <option value="failure">Falha</option>
+          <option value="cancelled">Cancelado</option>
+          <option value="in_progress">Em andamento</option>
+        </select>
               <button onclick="loadRuns(true)" class="text-xs text-blue-600">Atualizar</button>
               </div>
               </div>
