@@ -177,21 +177,15 @@ Execute o `sql/schema.sql` para criar/atualizar tabelas e views.
 
 ### Dashboards
 
-<video src="https://raw.githubusercontent.com/RodrigoMD2025/md_recebimentos_extractor/main/media/Painel%20Recebimentos_edit1.mp4" controls width="100%" style="max-width:720px;border-radius:8px;"></video>
+![Painel de Recebimentos](media/Painel%20Recebimentos.gif)
 
-<video src="https://raw.githubusercontent.com/RodrigoMD2025/md_recebimentos_extractor/main/media/Painel%20Contratos_edit1.mp4" controls width="100%" style="max-width:720px;border-radius:8px;"></video>
+![Painel de Contratos](media/Painel%20Contratos.gif)
 
 ### Relatórios
 
-![Relatório de Recebimentos](https://raw.githubusercontent.com/RodrigoMD2025/md_recebimentos_extractor/main/media/Relatorio%20Recebimentos.png)
+![Relatório de Recebimentos](media/Relatorio%20Recebimentos.png)
 
-![Relatório de Recebimentos (2)](https://raw.githubusercontent.com/RodrigoMD2025/md_recebimentos_extractor/main/media/Relatorio%20Recebimentos1.png)
-
-### Demonstrações
-
-<video src="https://raw.githubusercontent.com/RodrigoMD2025/md_recebimentos_extractor/main/media/20260728_140218.mp4" controls width="100%" style="max-width:720px;border-radius:8px;"></video>
-
-<video src="https://raw.githubusercontent.com/RodrigoMD2025/md_recebimentos_extractor/main/media/20260728_140523.mp4" controls width="100%" style="max-width:720px;border-radius:8px;"></video>
+![Relatório de Recebimentos (2)](media/Relatorio%20Recebimentos1.png)
 
 ---
 
