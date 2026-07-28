@@ -173,4 +173,26 @@ Execute o `sql/schema.sql` para criar/atualizar tabelas e views.
 
 ---
 
+## 📸 Galeria
+
+### Dashboards
+
+<video src="https://raw.githubusercontent.com/RodrigoMD2025/md_recebimentos_extractor/main/media/Painel%20Recebimentos_edit1.mp4" controls width="100%" style="max-width:720px;border-radius:8px;"></video>
+
+<video src="https://raw.githubusercontent.com/RodrigoMD2025/md_recebimentos_extractor/main/media/Painel%20Contratos_edit1.mp4" controls width="100%" style="max-width:720px;border-radius:8px;"></video>
+
+### Relatórios
+
+![Relatório de Recebimentos](https://raw.githubusercontent.com/RodrigoMD2025/md_recebimentos_extractor/main/media/Relatorio%20Recebimentos.png)
+
+![Relatório de Recebimentos (2)](https://raw.githubusercontent.com/RodrigoMD2025/md_recebimentos_extractor/main/media/Relatorio%20Recebimentos1.png)
+
+### Demonstrações
+
+<video src="https://raw.githubusercontent.com/RodrigoMD2025/md_recebimentos_extractor/main/media/20260728_140218.mp4" controls width="100%" style="max-width:720px;border-radius:8px;"></video>
+
+<video src="https://raw.githubusercontent.com/RodrigoMD2025/md_recebimentos_extractor/main/media/20260728_140523.mp4" controls width="100%" style="max-width:720px;border-radius:8px;"></video>
+
+---
+
 *Última atualização: Julho 2026*
