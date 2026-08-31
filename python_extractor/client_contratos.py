@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import aiohttp
 import asyncpg
@@ -319,7 +320,7 @@ async def main():
     except Exception as e:
         logging.error(f"Falha ao salvar relatório da extração: {e}")
 
-    now = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+    now = datetime.now(ZoneInfo("America/Sao_Paulo")).strftime("%d/%m/%Y %H:%M:%S")
     relatorio = (
         f"📋 <b>Extração de Contratos - {'Concluída' if status == 'ok' else status.upper()}</b>\n\n"
         f"🕐 <b>Data:</b> {now}\n"
