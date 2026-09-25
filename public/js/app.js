@@ -2540,7 +2540,9 @@ let chartContratosMes = null;
 let atualizacaoPagAtual = 1;
 let atualizacaoTotal = 0;
 let atualizacaoTotalPags = 1;
-let atualizacaoOrdem = { coluna: "meses_sem_atualizacao", dir: "DESC" };
+// A prioridade é fixa no backend: 1 cobrança, 2 renegociação, 3 nunca pagou,
+// 4 contrato parado. ASC = cobrar primeiro.
+let atualizacaoOrdem = { coluna: "prioridade", dir: "ASC" };
 let atualizacaoInicializada = false;
 
 // Atualizar navigateTo para incluir contratos
@@ -2952,7 +2954,7 @@ async function exportarContratosXLSX() {
 }
 
 // =============================================================================
-// SEM ATUALIZAÇÃO — Clientes que pararam de pagar ou encerraram o serviço
+// SEM ATUALIZAÇÃO — Clientes que exigem ação, por segmento do ciclo
 // =============================================================================
 const ATUALIZACAO_EXPORT_PAGINA = 500;
 
@@ -2970,11 +2972,11 @@ function fmtDataIso(iso) {
 
 function lerFiltrosAtualizacao() {
   return {
-    meses: getVal("filtro-atual-meses") || "6",
+    dias: getVal("filtro-atual-dias") || "0",
     situacao: getVal("filtro-atual-situacao") || "todos",
     status_contrato: getVal("filtro-atual-status") || "",
     contratante: getVal("filtro-atual-contratante").trim(),
-    sem_contrato_ativo: document.getElementById("filtro-atual-sem-ativo")?.checked ? "1" : "",
+    incluir_reativados: document.getElementById("filtro-atual-reativados")?.checked ? "1" : "",
   };
 }
 
@@ -2986,23 +2988,30 @@ function montarParamsAtualizacao(page = 1, limit = 50) {
     order_by: atualizacaoOrdem.coluna,
     order_dir: atualizacaoOrdem.dir,
   });
-  params.set("meses", f.meses);
+  params.set("dias", f.dias);
   params.set("situacao", f.situacao);
   if (f.status_contrato) params.set("status_contrato", f.status_contrato);
   if (f.contratante) params.set("contratante", f.contratante);
-  if (f.sem_contrato_ativo) params.set("sem_contrato_ativo", f.sem_contrato_ativo);
+  if (f.incluir_reativados) params.set("incluir_reativados", f.incluir_reativados);
   return params;
 }
 
+const ROTULO_SEGMENTO = {
+  atraso: "vencido (cobrança)",
+  ciclo_encerrado: "ciclo encerrado (renegociar)",
+  nunca_pagou: "nunca pagou",
+  sem_faturamento: "contrato sem faturamento",
+};
+
 function rotuloFiltroAtualizacao() {
   const f = lerFiltrosAtualizacao();
-  const partes = [`${f.meses}+ meses`];
-  if (f.situacao === "sem_pagamento") partes.push("sem pagamento");
-  if (f.situacao === "encerrado") partes.push("encerrados");
+  const partes = [];
+  if (f.situacao !== "todos") partes.push(ROTULO_SEGMENTO[f.situacao] || f.situacao);
+  if (Number(f.dias) > 0) partes.push(`parado há ${f.dias}+ dias`);
   if (f.status_contrato) partes.push(`status ${f.status_contrato}`);
-  if (f.sem_contrato_ativo) partes.push("sem contrato ativo");
+  if (f.incluir_reativados) partes.push("incl. reativados");
   if (f.contratante) partes.push(`"${f.contratante}"`);
-  return partes.join(" · ");
+  return partes.length ? partes.join(" · ") : "todos os segmentos";
 }
 
 function atualizarRotuloAtualizacao() {
@@ -3011,40 +3020,65 @@ function atualizarRotuloAtualizacao() {
 }
 
 function renderCardsAtualizacao(resumo) {
-  setTxt("atual-clientes", resumo.clientes);
-  setTxt("atual-contratos", `${resumo.contratos} contratos`);
-  setTxt("atual-valor-mensal", fmtMoeda(resumo.valor_mensal));
-  setTxt("atual-valor-aberto", fmtMoeda(resumo.valor_aberto));
-  setTxt("atual-parcelas", `${resumo.parcelas_aberto} parcelas`);
-  setTxt("atual-encerrados", resumo.clientes_encerrados);
-  setTxt("atual-encerrados-def", `${resumo.clientes_encerrados_definitivo} sem contrato ativo`);
-  setTxt("atual-nunca-pagaram", resumo.clientes_nunca_pagaram);
+  setTxt("atual-valor-vencido", fmtMoeda(resumo.valor_vencido));
+  setTxt("atual-atraso-info", `${resumo.clientes_atraso || 0} clientes · ${resumo.parcelas_vencidas || 0} parcelas vencidas`);
+  setTxt("atual-clientes-ciclo", resumo.clientes_ciclo_encerrado);
+  setTxt("atual-ciclo-info", "ciclo terminou, sem contrato novo");
+  setTxt("atual-clientes-nunca", resumo.clientes_nunca_pagou);
+  setTxt("atual-nunca-info", "com cobranças, nenhum pago");
+  setTxt("atual-clientes-sem-faturamento", resumo.clientes_sem_faturamento);
+  setTxt("atual-sem-faturamento-info", "ativos que nunca geraram cobrança");
+
+  // Destaca o card do segmento selecionado
+  const sel = getVal("filtro-atual-situacao");
+  for (const [id, seg] of [["card-atraso", "atraso"], ["card-ciclo", "ciclo_encerrado"],
+                           ["card-nunca", "nunca_pagou"], ["card-sem-fat", "sem_faturamento"]]) {
+    document.getElementById(id)?.classList.toggle("ring-2", sel === seg);
+  }
 }
 
-function renderLinhaAtualizacao(r) {
-  const meses = r.meses_sem_atualizacao;
-  const mesesBadge =
-    r.situacao === "Encerrado"
-      ? `<span class="badge badge-neutral">Encerrado</span>`
-      : meses === null || meses === undefined
-        ? `<span class="badge badge-failure">nunca pagou</span>`
-        : `<span class="badge ${meses >= 12 ? "badge-failure" : "badge-queued"}">${meses} ${meses === 1 ? "mês" : "meses"}</span>`;
+const BADGE_SEGMENTO = {
+  atraso: ["badge-failure", "vencido"],
+  ciclo_encerrado: ["badge-queued", "ciclo encerrado"],
+  nunca_pagou: ["badge-failure", "nunca pagou"],
+  sem_faturamento: ["badge-neutral", "sem faturamento"],
+};
 
-  const tagAtivo =
-    r.situacao === "Encerrado" && r.possui_contrato_ativo
-      ? `<span class="text-[10px] text-gray-400"> (cliente ainda ativo)</span>`
-      : "";
+function renderLinhaAtualizacao(r) {
+  const [classe, texto] = BADGE_SEGMENTO[r.situacao] || ["badge-neutral", r.situacao];
+
+  const atrasoDias = r.dias_atraso;
+  const atraso =
+    atrasoDias === null || atrasoDias === undefined
+      ? `<span class="text-gray-400">—</span>`
+      : `<span class="font-semibold ${atrasoDias > 90 ? "text-red-600" : "text-amber-600"}">${atrasoDias}d</span>`;
+
+  // "Parado ha" so tem sentido quando o ciclo terminou de fato; em atraso e
+  // nunca_pagou o contrato ainda esta vigente.
+  const parado = r.dias_sem_contrato;
+  const paradoCelula =
+    parado === null || parado === undefined || (parado === 0 && r.ciclo_fechado === false)
+      ? `<span class="text-gray-400">—</span>`
+      : `<span class="font-semibold ${parado > 730 ? "text-red-600" : parado > 365 ? "text-amber-600" : ""}">${parado}d</span>`;
+
+  // Cliente que já assinou outro contrato: fora da lista, mas visível na auditoria.
+  const tagVoltou = r.reassinou_depois
+    ? `<span class="text-[10px] text-emerald-600 dark:text-emerald-400"> (voltou${
+        r.inicio_novo_contrato ? ` em ${esc(fmtDataIso(r.inicio_novo_contrato))}` : ""
+      })</span>`
+    : "";
 
   return `
     <tr>
-      <td class="px-5 py-3">${esc(r.cliente)}${tagAtivo}</td>
+      <td class="px-5 py-3">${esc(r.cliente)}${tagVoltou}</td>
       <td class="px-5 py-3 font-mono text-xs font-semibold">${esc(r.codigo)}</td>
-      <td class="px-5 py-3">${mesesBadge}</td>
+      <td class="px-5 py-3"><span class="badge ${classe}">${texto}</span></td>
+      <td class="px-5 py-3 text-xs">${atraso}</td>
+      <td class="px-5 py-3 text-xs">${paradoCelula}</td>
       <td class="px-5 py-3 text-xs">${esc(fmtDataIso(r.ultimo_pagamento))}</td>
-      <td class="px-5 py-3 text-xs font-semibold">${meses === null || meses === undefined ? "—" : meses}</td>
-      <td class="px-5 py-3 text-xs">${r.valor_parcela ? esc(fmtMoeda(r.valor_parcela)) : "—"}</td>
-      <td class="px-5 py-3 text-xs">${r.parcelas_em_aberto || 0}</td>
-      <td class="px-5 py-3 text-xs font-semibold ${Number(r.valor_em_aberto) > 0 ? "text-red-600" : ""}">${esc(fmtMoeda(r.valor_em_aberto))}</td>
+      <td class="px-5 py-3 text-xs">${r.valor_referencia ? esc(fmtMoeda(r.valor_referencia)) : "—"}</td>
+      <td class="px-5 py-3 text-xs">${r.parcelas_vencidas || 0}</td>
+      <td class="px-5 py-3 text-xs font-semibold ${Number(r.valor_vencido) > 0 ? "text-red-600" : "text-gray-400"}">${esc(fmtMoeda(r.valor_vencido))}</td>
     </tr>
   `;
 }
@@ -3078,7 +3112,7 @@ async function carregarAtualizacao(page) {
     renderCardsAtualizacao(result.resumo || {});
 
     if (!data.length) {
-      tbody.innerHTML = `<tr><td colspan="8" class="px-5 py-6 text-center text-gray-400">Nenhum cliente encontrado com esses filtros.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="9" class="px-5 py-6 text-center text-gray-400">Nenhum cliente encontrado com esses filtros.</td></tr>`;
     } else {
       tbody.innerHTML = data.map(renderLinhaAtualizacao).join("");
     }
@@ -3095,7 +3129,7 @@ async function carregarAtualizacao(page) {
       loadingEl.classList.remove("hidden");
       loadingEl.textContent = `Erro ao carregar: ${e.message}`;
     }
-    toast(`Erro ao carregar clientes sem atualização: ${e.message}`, "error");
+    toast(`Erro ao carregar clientes que exigem ação: ${e.message}`, "error");
   }
 }
 
@@ -3105,14 +3139,21 @@ function aplicarFiltrosAtualizacao() {
 }
 
 function limparFiltrosAtualizacao() {
-  setVal("filtro-atual-meses", "6");
+  setVal("filtro-atual-dias", "0");
   setVal("filtro-atual-situacao", "todos");
   setVal("filtro-atual-status", "");
   setVal("filtro-atual-contratante", "");
-  const chk = document.getElementById("filtro-atual-sem-ativo");
+  const chk = document.getElementById("filtro-atual-reativados");
   if (chk) chk.checked = false;
   atualizarRotuloAtualizacao();
   carregarAtualizacao(1);
+}
+
+function filtrarPorSituacaoAtualizacao(segmento) {
+  const sel = getVal("filtro-atual-situacao");
+  setVal("filtro-atual-situacao", sel === segmento ? "todos" : segmento);
+  setVal("filtro-atual-dias", "0");
+  aplicarFiltrosAtualizacao();
 }
 
 function ordenarAtualizacao(coluna) {
@@ -3155,16 +3196,19 @@ function linhaExportAtualizacao(r) {
     "Contratante": r.cliente,
     "Contrato": r.codigo,
     "Alias/Matriz": r.alias_matriz,
-    "Situação": r.situacao,
+    "Segmento": ROTULO_SEGMENTO[r.situacao] || r.situacao,
     "Status": r.status_contrato,
-    "Cliente ainda ativo": r.possui_contrato_ativo ? "Sim" : "Não",
+    "Voltou a ser cliente": r.reassinou_depois ? "Sim" : "Não",
     "Início": r.data_inicio,
     "Término": r.data_termino,
-    "Último vencimento": r.ultimo_vencimento ? fmtDataIso(r.ultimo_vencimento) : "",
+    "Fim do ciclo": r.fim_contrato ? fmtDataIso(r.fim_contrato) : "",
+    "Dias de atraso": r.dias_atraso ?? "",
+    "Parado há (dias)": r.dias_sem_contrato ?? "",
     "Último pagamento": r.ultimo_pagamento ? fmtDataIso(r.ultimo_pagamento) : "",
-    "Meses sem atualização": r.meses_sem_atualizacao ?? "",
     "Parcelas no histórico": r.total_parcelas,
-    "Valor da parcela": r.valor_parcela != null ? Number(r.valor_parcela).toFixed(2) : "",
+    "Valor de referência": r.valor_referencia != null ? Number(r.valor_referencia).toFixed(2) : "",
+    "Parcelas vencidas": r.parcelas_vencidas,
+    "Valor vencido": r.valor_vencido != null ? Number(r.valor_vencido).toFixed(2) : "",
     "Parcelas em aberto": r.parcelas_em_aberto,
     "Valor em aberto": r.valor_em_aberto != null ? Number(r.valor_em_aberto).toFixed(2) : "",
   };
@@ -3182,7 +3226,7 @@ async function exportarAtualizacaoCSV() {
       ...registros.map((reg) => headers.map((h) => csvEsc(reg[h])).join(",")),
     ].join("\n");
 
-    downloadBlob(new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" }), "clientes_sem_atualizacao.csv");
+    downloadBlob(new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" }), "clientes_exigem_acao.csv");
     toast(`CSV exportado! ${total} contratos (${rotuloFiltroAtualizacao()})`, "success");
   } catch (e) {
     toast("Erro ao exportar: " + e.message, "error");
@@ -3196,8 +3240,8 @@ async function exportarAtualizacaoXLSX() {
 
     const ws = XLSX.utils.json_to_sheet(linhas.map(linhaExportAtualizacao));
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Sem Atualização");
-    XLSX.writeFile(wb, "clientes_sem_atualizacao.xlsx");
+    XLSX.utils.book_append_sheet(wb, ws, "Exigem Ação");
+    XLSX.writeFile(wb, "clientes_exigem_acao.xlsx");
     toast(`XLSX exportado! ${total} contratos (${rotuloFiltroAtualizacao()})`, "success");
   } catch (e) {
     toast("Erro ao exportar: " + e.message, "error");

@@ -3,18 +3,33 @@ const { verifyToken, cors } = require("./_lib/auth");
 
 // Colunas permitidas para ordenação (whitelist contra SQL injection)
 const ORDER_BY_WHITELIST = new Set([
-  "meses_sem_atualizacao",
-  "contratante",
+  "prioridade",
+  "dias_sem_contrato",
+  "dias_atraso",
+  "cliente",
   "codigo",
   "valor_parcela",
+  "valor_referencia",
   "valor_em_aberto",
   "parcelas_em_aberto",
+  "parcelas_vencidas",
+  "valor_vencido",
   "ultimo_pagamento",
   "ultimo_vencimento",
 ]);
 
-const MESES_OPCOES = [3, 6, 12, 24];
-const SITUACOES = new Set(["todos", "sem_pagamento", "encerrado"]);
+// Segmentos do ciclo real do negócio (ver v_sem_atualizacao)
+const SITUACOES = new Set([
+  "todos",
+  "atraso",
+  "ciclo_encerrado",
+  "nunca_pagou",
+  "sem_faturamento",
+]);
+
+// Janelas de tempo: "parado há mais de N dias" (o ciclo é anual, então a
+// pergunta útil é desde o fim do contrato, não desde o último pagamento).
+const DIAS_OPCOES = [90, 180, 365, 730];
 
 const SELECT_FIELDS = [
   "cliente",
@@ -29,32 +44,48 @@ const SELECT_FIELDS = [
   "ultimo_pagamento",
   "ultimo_vencimento",
   "valor_parcela",
+  "valor_referencia",
   "parcelas_em_aberto",
   "valor_em_aberto",
-  "possui_contrato_ativo",
+  "parcelas_vencidas",
+  "valor_vencido",
+  "ciclo_fechado",
+  "reassinou_depois",
+  "inicio_novo_contrato",
+  "fim_contrato",
+  "dias_sem_contrato",
+  "dias_atraso",
   "situacao",
-  "meses_sem_atualizacao",
+  "prioridade",
 ].join(", ");
 
 const RESUMO_FIELDS = `
   COUNT(DISTINCT cliente) AS clientes,
   COUNT(*) AS contratos,
-  COUNT(DISTINCT cliente) FILTER (WHERE status_contrato = 'Inativo') AS clientes_encerrados,
-  COUNT(DISTINCT cliente) FILTER (
-    WHERE status_contrato = 'Inativo' AND NOT possui_contrato_ativo
-  ) AS clientes_encerrados_definitivo,
-  COUNT(DISTINCT cliente) FILTER (
-    WHERE status_contrato <> 'Inativo' AND ultimo_pagamento IS NULL
-  ) AS clientes_nunca_pagaram,
-  COALESCE(SUM(valor_parcela), 0) AS valor_mensal,
+  COUNT(DISTINCT cliente) FILTER (WHERE situacao = 'atraso') AS clientes_atraso,
+  COUNT(DISTINCT cliente) FILTER (WHERE situacao = 'ciclo_encerrado') AS clientes_ciclo_encerrado,
+  COUNT(DISTINCT cliente) FILTER (WHERE situacao = 'nunca_pagou') AS clientes_nunca_pagou,
+  COUNT(DISTINCT cliente) FILTER (WHERE situacao = 'sem_faturamento') AS clientes_sem_faturamento,
   COALESCE(SUM(parcelas_em_aberto), 0) AS parcelas_aberto,
-  COALESCE(SUM(valor_em_aberto), 0) AS valor_aberto
+  COALESCE(SUM(valor_em_aberto), 0) AS valor_aberto,
+  COALESCE(SUM(parcelas_vencidas), 0) AS parcelas_vencidas,
+  COALESCE(SUM(valor_vencido), 0) AS valor_vencido,
+  COALESCE(SUM(valor_referencia), 0) AS valor_referencia
 `;
 
 const VIEW = "v_sem_atualizacao";
 
 /**
  * Handler principal do endpoint /api/sem-atualizacao
+ *
+ * Lista clientes que exigem ação, segmentados pelo ciclo do negócio:
+ *   atraso  ainda dentro do contrato e com parcelas em aberto (cobrança)
+ *   ciclo_encerrado  o ciclo acabou e o cliente não assinou outro (renegociação)
+ *   nunca_pagou      tem parcelas emitidas e nenhuma paga
+ *   sem_faturamento  contrato Ativo que nunca emitiu uma parcela
+ *
+ * Cliente que já assinou outro contrato depois (reassinou_depois) sai da lista
+ * por padrão: ele voltou, não é lead nem caso perdido.
  *
  * @param {import("http").IncomingMessage} req
  * @param {import("http").ServerResponse}  res
@@ -80,54 +111,52 @@ module.exports = async function handler(req, res) {
   }
 
   const {
-    meses: mesesRaw,
+    dias: diasRaw,
     situacao: situacaoRaw,
     status_contrato,
     contratante,
-    sem_contrato_ativo,
+    incluir_reativados,
     page: pageRaw = "1",
     limit: limitRaw = "50",
-    order_by: orderByRaw = "meses_sem_atualizacao",
-    order_dir: orderDirRaw = "DESC",
+    order_by: orderByRaw = "prioridade",
+    order_dir: orderDirRaw = "ASC",
   } = req.query || {};
 
   const page = Math.max(1, parseInt(pageRaw, 10) || 1);
   const limit = Math.min(500, Math.max(1, parseInt(limitRaw, 10) || 50));
   const offset = (page - 1) * limit;
 
-  const mesesNum = parseInt(mesesRaw, 10);
-  const meses = MESES_OPCOES.includes(mesesNum) ? mesesNum : 6;
+  const diasNum = parseInt(diasRaw, 10);
+  const dias = DIAS_OPCOES.includes(diasNum) ? diasNum : 0;
   const situacao = SITUACOES.has(situacaoRaw) ? situacaoRaw : "todos";
 
-  const orderBy = ORDER_BY_WHITELIST.has(orderByRaw) ? orderByRaw : "meses_sem_atualizacao";
-  const orderDir = String(orderDirRaw).toUpperCase() === "ASC" ? "ASC" : "DESC";
-  // NULL = nunca pagou, então precisa vir primeiro no topo da lista
-  // Encerrados vão para o fim; dentro de cada grupo o mais antigo primeiro.
-  const orderExpr =
-    orderBy === "meses_sem_atualizacao"
-      ? `(status_contrato = 'Inativo') ASC, meses_sem_atualizacao ${orderDir} NULLS FIRST, cliente ASC`
-      : `${orderBy} ${orderDir} NULLS LAST, cliente ASC`;
+  const orderBy = ORDER_BY_WHITELIST.has(orderByRaw) ? orderByRaw : "prioridade";
+  const orderDir = String(orderDirRaw).toUpperCase() === "DESC" ? "DESC" : "ASC";
+
+  const incluirReativados = incluir_reativados === "1" || incluir_reativados === "true";
 
   const conditions = [];
   const params = [];
 
-  // "Sem pagamento" só vale para contratos Ativos que possuem histórico de
-  // faturamento — contrato sem histórico não é evidência de inadimplência.
-  // O parâmetro de meses só é enviado quando a condição realmente o usa.
-  let condSemPagamento = null;
-  if (situacao !== "encerrado") {
-    params.push(meses);
-    condSemPagamento =
-      `(status_contrato <> 'Inativo' AND total_parcelas > 0` +
-      ` AND (ultimo_pagamento IS NULL OR COALESCE(meses_sem_atualizacao, 999) >= $${params.length}))`;
+  // A lista é só dos segmentos acionáveis. "todos" = os quatro.
+  if (situacao === "todos") {
+    conditions.push(
+      `situacao IN ('atraso','ciclo_encerrado','nunca_pagou','sem_faturamento')`
+    );
+  } else {
+    params.push(situacao);
+    conditions.push(`situacao = $${params.length}`);
   }
 
-  if (situacao === "encerrado") {
-    conditions.push(`status_contrato = 'Inativo'`);
-  } else if (situacao === "sem_pagamento") {
-    conditions.push(condSemPagamento);
-  } else {
-    conditions.push(`(${condSemPagamento} OR status_contrato = 'Inativo')`);
+  // "Parado ha" so faz sentido para ciclo encerrado e contrato sem
+  // faturamento. Atraso e nunca-pagou sao cobranca de contrato vigente e nao
+  // devem sumir da lista quando o filtro de tempo aumenta.
+  if (dias > 0) {
+    params.push(dias);
+    conditions.push(
+      `(situacao NOT IN ('ciclo_encerrado','sem_faturamento')` +
+      ` OR (dias_sem_contrato IS NOT NULL AND dias_sem_contrato >= $${params.length}))`
+    );
   }
 
   if (status_contrato === "Ativo" || status_contrato === "Inativo") {
@@ -135,22 +164,53 @@ module.exports = async function handler(req, res) {
     conditions.push(`status_contrato = $${params.length}`);
   }
 
-  if (sem_contrato_ativo === "1" || sem_contrato_ativo === "true") {
-    conditions.push(`NOT possui_contrato_ativo`);
-  }
-
   if (contratante) {
     params.push(`%${contratante}%`);
     conditions.push(`cliente ILIKE $${params.length}`);
   }
 
+  // Cliente que já voltou a ser cliente: só entra se explicitamente pedido.
+  if (!incluirReativados) {
+    conditions.push(`NOT reassinou_depois`);
+  }
+
   const whereClause = `WHERE ${conditions.join(" AND ")}`;
 
-  try {
-    const resumoResult = await query(
-      `SELECT ${RESUMO_FIELDS} FROM ${VIEW} ${whereClause}`,
-      params
+  // Os cards contam sempre os quatro segmentos, ignorando o filtro de segmento,
+  // busca e status: eles são a navegação da tela e precisam continuar mostrando
+  // para onde dá para ir. Só a janela de tempo e o toggle de reativados pesam.
+  const cardConditions = [];
+  const cardParams = [];
+  // "Parado ha" so faz sentido para ciclo encerrado e contrato sem
+  // faturamento. Atraso e nunca-pagou sao cobranca de contrato vigente e nao
+  // devem sumir da lista quando o filtro de tempo aumenta.
+  if (dias > 0) {
+    params.push(dias);
+    cardConditions.push(
+      `(situacao NOT IN ('ciclo_encerrado','sem_faturamento')` +
+      ` OR (dias_sem_contrato IS NOT NULL AND dias_sem_contrato >= $${cardParams.length}))`
     );
+  }
+  if (!incluirReativados) {
+    cardConditions.push(`NOT reassinou_depois`);
+  }
+  const cardWhere = `WHERE situacao IN ('atraso','ciclo_encerrado','nunca_pagou','sem_faturamento')${
+    cardConditions.length ? " AND " + cardConditions.join(" AND ") : ""
+  }`;
+
+  // Prioridade fixa a ordem de ação (1 cobrança, 2 renegociação, 3 nunca
+  // pagou, 4 parado sem faturamento). Dentro do grupo, o lead mais recente
+  // vem primeiro — é o que ainda está dentro da janela de retorno.
+  const secondary = orderBy === "prioridade" ? "dias_sem_contrato ASC NULLS LAST" : `${orderBy} ${orderDir} NULLS LAST`;
+  // NULLS LAST explicito: com DESC o Postgres colocaria vazios primeiro, e
+  // "linhas sem atraso" no topo da lista de cobrança seria o oposto do útil.
+  const orderExpr = `${orderBy} ${orderDir} NULLS LAST, ${secondary}, cliente ASC`;
+
+  try {
+    const [resumoResult, cardsResult] = await Promise.all([
+      query(`SELECT ${RESUMO_FIELDS} FROM ${VIEW} ${whereClause}`, params),
+      query(`SELECT ${RESUMO_FIELDS} FROM ${VIEW} ${cardWhere}`, cardParams),
+    ]);
 
     const countResult = await query(
       `SELECT COUNT(*) AS total FROM ${VIEW} ${whereClause}`,
@@ -166,22 +226,34 @@ module.exports = async function handler(req, res) {
     );
 
     const resumo = resumoResult.rows[0] || {};
+    const cards = cardsResult.rows[0] || {};
     res.status(200).json({
       data: dataResult.rows,
       total,
       page,
       limit,
       pages: Math.ceil(total / limit),
-      filtros: { meses, situacao, status_contrato: status_contrato || "", contratante: contratante || "" },
+      filtros: {
+        dias,
+        situacao,
+        status_contrato: status_contrato || "",
+        contratante: contratante || "",
+        incluir_reativados: incluirReativados,
+      },
       resumo: {
         clientes: Number(resumo.clientes) || 0,
         contratos: Number(resumo.contratos) || 0,
-        clientes_encerrados: Number(resumo.clientes_encerrados) || 0,
-        clientes_encerrados_definitivo: Number(resumo.clientes_encerrados_definitivo) || 0,
-        clientes_nunca_pagaram: Number(resumo.clientes_nunca_pagaram) || 0,
-        valor_mensal: Number(resumo.valor_mensal) || 0,
+        // Navegacao: sempre os quatro segmentos,independentemente do filtro aplicado.
+        clientes_atraso: Number(cards.clientes_atraso) || 0,
+        clientes_ciclo_encerrado: Number(cards.clientes_ciclo_encerrado) || 0,
+        clientes_nunca_pagou: Number(cards.clientes_nunca_pagou) || 0,
+        clientes_sem_faturamento: Number(cards.clientes_sem_faturamento) || 0,
+        parcelas_vencidas: Number(cards.parcelas_vencidas) || 0,
+        valor_vencido: Number(cards.valor_vencido) || 0,
+        // Detalhe da lista filtrada.
         parcelas_aberto: Number(resumo.parcelas_aberto) || 0,
         valor_aberto: Number(resumo.valor_aberto) || 0,
+        valor_referencia: Number(resumo.valor_referencia) || 0,
       },
     });
   } catch (dbErr) {

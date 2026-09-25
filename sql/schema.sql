@@ -180,13 +180,45 @@ COMMENT ON VIEW v_contratos_por_mes IS 'Contratos ativos vencendo por mês.';
 
 -- =============================================================================
 -- VIEW: v_sem_atualizacao
--- Clientes que pararam de pagar (Ativo sem pagamento há N meses) ou
--- encerraram o serviço (Inativo), com histórico e parcelas em aberto.
--- Contratos Ativos sem histórico em recebimentos ficam de fora: não há
--- evidência de inadimplência, só ausência de faturamento.
+-- Clientes que exigem ação, segmentados pelo ciclo real do negócio (contratos
+-- anuais). Medir "meses sem pagamento" não serve: o ciclo de ~12 meses significa
+-- que um contrato encerrado há 6 meses é o fim normal de um ciclo, não atraso.
+--
+--   1. sem_faturamento  Ativo, nunca emitiu uma parcela e já passou do período
+--                      de carência de 90 dias. O contrato está "Ativo" no
+--                      cadastro mas não gera nada.
+--   2. nunca_pagou      Ativo, tem parcelas emitidas e nenhuma foi paga.
+--   3. atraso           Tem parcela com vencimento já passado e não paga. É a
+--                      lista de cobrança. Parcelas que ainda vão vencer não
+--                      contam: um contrato em dia tem parcelas futuras.
+--   4. ciclo_encerrado  O ciclo terminou e o cliente não assinou outro contrato.
+--                      É o pipeline de renegociação.
+--
+-- Cliente que já assinou contrato depois (reassinou_depois) sai da lista: ele
+-- voltou, não é caso perdido nem é lead.
 -- =============================================================================
 CREATE OR REPLACE VIEW v_sem_atualizacao AS
-WITH pagamentos AS (
+WITH contratos_base AS (
+    SELECT
+        c.codigo,
+        c.status,
+        c.contratante,
+        c.alias_matriz,
+        c.forma_envio,
+        COALESCE(
+            NULLIF(btrim(c.contratante), ''),
+            NULLIF(btrim(c.alias_matriz), ''),
+            c.codigo
+        ) AS cliente,
+        c.data_inicio,
+        c.data_termino,
+        CASE WHEN c.data_inicio ~ '^\d{2}/\d{2}/\d{4}$'
+             THEN TO_DATE(c.data_inicio, 'DD/MM/YYYY') END AS inicio,
+        CASE WHEN c.data_termino ~ '^\d{2}/\d{2}/\d{4}$'
+             THEN TO_DATE(c.data_termino, 'DD/MM/YYYY') END AS termino
+    FROM contratos c
+),
+pagamentos AS (
     SELECT
         codigo_contrato,
         COUNT(*) AS total_parcelas,
@@ -197,6 +229,30 @@ WITH pagamentos AS (
             WHERE vencimento ~ '^\d{2}/\d{2}/\d{2}$'
         ) AS ultimo_vencimento,
         COUNT(*) FILTER (WHERE status_pagamento <> 'Pago') AS parcelas_em_aberto,
+        -- Parcelas com vencimento JÁ PASSADO: é o que distingue cobrança de
+        -- "ainda vai vencer". O vencimento máximo não serve para isso, porque
+        -- um contrato em dia tem parcelas futuras e mascararia o atraso.
+        COUNT(*) FILTER (
+            WHERE status_pagamento <> 'Pago'
+              AND vencimento ~ '^\d{2}/\d{2}/\d{2}$'
+              AND TO_DATE(vencimento, 'DD/MM/YY') < CURRENT_DATE
+        ) AS parcelas_vencidas,
+        MIN(TO_DATE(vencimento, 'DD/MM/YY')) FILTER (
+            WHERE status_pagamento <> 'Pago'
+              AND vencimento ~ '^\d{2}/\d{2}/\d{2}$'
+              AND TO_DATE(vencimento, 'DD/MM/YY') < CURRENT_DATE
+        ) AS vencida_mais_antiga,
+        SUM(
+            (CASE
+                WHEN regexp_replace(valor_parcela, '^R\$\s*', '') LIKE '%,%'
+                    THEN REPLACE(REPLACE(regexp_replace(valor_parcela, '^R\$\s*', ''), '.', ''), ',', '.')
+                ELSE regexp_replace(valor_parcela, '^R\$\s*', '')
+            END)::numeric
+        ) FILTER (
+            WHERE status_pagamento <> 'Pago'
+              AND vencimento ~ '^\d{2}/\d{2}/\d{2}$'
+              AND TO_DATE(vencimento, 'DD/MM/YY') < CURRENT_DATE
+        ) AS valor_vencido,
         SUM(
             (CASE
                 WHEN regexp_replace(valor_parcela, '^R\$\s*', '') LIKE '%,%'
@@ -219,49 +275,59 @@ ultima_parcela AS (
     WHERE status_pagamento = 'Pago'
     ORDER BY codigo_contrato, TO_DATE(vencimento, 'DD/MM/YY') DESC
 ),
+-- Maior parcela já paga pelo cliente em qualquer contrato: serve de referência
+-- de quanto o contrato parado renderia, já que o contrato sem faturamento não
+-- tem valor próprio.
+referencia AS (
+    SELECT b.cliente, max(u.valor_parcela) AS valor_referencia
+    FROM contratos_base b
+    JOIN ultima_parcela u ON u.codigo_contrato = b.codigo
+    GROUP BY b.cliente
+),
 base AS (
     SELECT
-        c.id,
-        c.contratante,
-        c.alias_matriz,
-        COALESCE(
-            NULLIF(btrim(c.contratante), ''),
-            NULLIF(btrim(c.alias_matriz), ''),
-            c.codigo
-        ) AS cliente,
-        c.codigo,
-        c.status AS status_contrato,
-        c.data_inicio,
-        c.data_termino,
-        c.forma_envio,
+        b.cliente,
+        b.contratante,
+        b.codigo,
+        b.alias_matriz,
+        b.status AS status_contrato,
+        b.data_inicio,
+        b.data_termino,
+        b.forma_envio,
+        b.inicio,
+        b.termino,
         COALESCE(p.total_parcelas, 0) AS total_parcelas,
         p.ultimo_pagamento,
         p.ultimo_vencimento,
         up.valor_parcela,
+        r.valor_referencia,
         COALESCE(p.parcelas_em_aberto, 0) AS parcelas_em_aberto,
         COALESCE(p.valor_em_aberto, 0) AS valor_em_aberto,
-        -- "O cliente tem contrato ativo?" Compara pela identidade do cliente
-        -- (mesmo fallback de "cliente"), e nunca por contratante vazio: '' = ''
-        -- casaria qualquer contrato sem nome e marcaria Inativos como "cliente
-        -- ainda ativo" indevidamente. Uma linha Ativo é ela mesma o contrato
-        -- ativo, então o flag só olha para os demais contratos do mesmo cliente.
-        (c.status = 'Ativo' OR EXISTS (
-            SELECT 1 FROM contratos a
-            WHERE a.status = 'Ativo'
-              AND a.codigo <> c.codigo
-              AND COALESCE(
-                    NULLIF(btrim(a.contratante), ''),
-                    NULLIF(btrim(a.alias_matriz), ''),
-                    a.codigo
-                  ) = COALESCE(
-                    NULLIF(btrim(c.contratante), ''),
-                    NULLIF(btrim(c.alias_matriz), ''),
-                    c.codigo
-                  )
-        )) AS possui_contrato_ativo
-    FROM contratos c
-    LEFT JOIN pagamentos p ON p.codigo_contrato = c.codigo
-    LEFT JOIN ultima_parcela up ON up.codigo_contrato = c.codigo
+        COALESCE(p.parcelas_vencidas, 0) AS parcelas_vencidas,
+        COALESCE(p.valor_vencido, 0) AS valor_vencido,
+        p.vencida_mais_antiga,
+        -- O ciclo fecha quando o contrato vence ou, na falta da data, quando a
+        -- última cobrança emitida expira.
+        (b.termino IS NOT NULL AND b.termino < CURRENT_DATE) OR b.status = 'Inativo'
+            AS ciclo_fechado,
+        -- O cliente assinou outro contrato depois deste?
+        EXISTS (
+            SELECT 1 FROM contratos_base n
+            WHERE n.cliente = b.cliente
+              AND b.inicio IS NOT NULL
+              AND n.inicio IS NOT NULL
+              AND n.inicio > b.inicio
+        ) AS reassinou_depois,
+        (SELECT min(n.inicio) FROM contratos_base n
+         WHERE n.cliente = b.cliente
+           AND b.inicio IS NOT NULL
+           AND n.inicio IS NOT NULL
+           AND n.inicio > b.inicio
+        ) AS inicio_novo_contrato
+    FROM contratos_base b
+    LEFT JOIN pagamentos p ON p.codigo_contrato = b.codigo
+    LEFT JOIN ultima_parcela up ON up.codigo_contrato = b.codigo
+    LEFT JOIN referencia r ON r.cliente = b.cliente
 )
 SELECT
     cliente,
@@ -276,19 +342,49 @@ SELECT
     ultimo_pagamento,
     ultimo_vencimento,
     valor_parcela,
+    valor_referencia,
     parcelas_em_aberto,
     valor_em_aberto,
-    possui_contrato_ativo,
-    CASE WHEN status_contrato = 'Inativo' THEN 'Encerrado' ELSE 'Sem pagamento' END AS situacao,
+    parcelas_vencidas,
+    valor_vencido,
+    ciclo_fechado,
+    reassinou_depois,
+    inicio_novo_contrato,
+    -- Fim do ciclo: se o cliente já assinou outro contrato, o ciclo anterior
+    -- terminou quando o novo começou; senão no término, na última cobrança ou,
+    -- se nunca emitiu nada, no início.
+    COALESCE(b.inicio_novo_contrato, b.termino, b.ultimo_vencimento::date, b.inicio) AS fim_contrato,
     CASE
-        WHEN status_contrato = 'Ativo' AND ultimo_pagamento IS NOT NULL
-        THEN GREATEST(0, (EXTRACT(YEAR FROM age(CURRENT_DATE, ultimo_pagamento)) * 12
-             + EXTRACT(MONTH FROM age(CURRENT_DATE, ultimo_pagamento)))::int)
-        ELSE NULL
-    END AS meses_sem_atualizacao
-FROM base;
+        WHEN COALESCE(b.inicio_novo_contrato, b.termino, b.ultimo_vencimento::date, b.inicio) IS NOT NULL
+        THEN GREATEST(0, (CURRENT_DATE - COALESCE(b.inicio_novo_contrato, b.termino, b.ultimo_vencimento::date, b.inicio))::int)
+    END AS dias_sem_contrato,
+    CASE WHEN b.vencida_mais_antiga IS NOT NULL
+         THEN (CURRENT_DATE - b.vencida_mais_antiga)::int
+    END AS dias_atraso,
+    CASE
+        WHEN b.status_contrato = 'Ativo'
+         AND b.total_parcelas = 0
+         AND (b.inicio IS NULL OR CURRENT_DATE - b.inicio > 90)
+            THEN 'sem_faturamento'
+        WHEN b.status_contrato = 'Ativo' AND b.total_parcelas > 0 AND b.ultimo_pagamento IS NULL
+            THEN 'nunca_pagou'
+        WHEN b.parcelas_vencidas > 0
+            THEN 'atraso'
+        WHEN b.ciclo_fechado
+            THEN 'ciclo_encerrado'
+        ELSE 'sem_acao'
+    END AS situacao,
+    CASE
+        WHEN b.status_contrato = 'Ativo' AND b.total_parcelas = 0
+         AND (b.inicio IS NULL OR CURRENT_DATE - b.inicio > 90) THEN 4
+        WHEN b.status_contrato = 'Ativo' AND b.total_parcelas > 0 AND b.ultimo_pagamento IS NULL THEN 3
+        WHEN b.parcelas_vencidas > 0 THEN 1
+        WHEN b.ciclo_fechado THEN 2
+        ELSE 9
+    END AS prioridade
+FROM base b;
 
-COMMENT ON VIEW v_sem_atualizacao IS 'Contratos sem atualização: sem pagamento ou encerrados, com último pagamento, histórico e parcelas em aberto. "cliente" falls back to alias_matriz quando o contratante vem vazio.';
+COMMENT ON VIEW v_sem_atualizacao IS 'Clientes que exigem ação, segmentados pelo ciclo anual: atraso_no_prazo (cobrança), ciclo_encerrado (renegociação), nunca_pagou e sem_faturamento. "cliente" falls back to alias_matriz; reassinou_depois marca quem já voltou e por isso sai da lista.';
 -- =============================================================================
 -- Tabela de relatórios de extração de contratos (para o monitor do dashboard)
 -- =============================================================================
