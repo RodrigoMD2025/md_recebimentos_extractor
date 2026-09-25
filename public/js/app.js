@@ -2724,15 +2724,88 @@ function aplicarFiltrosContratos() {
 }
 
 // =============================================================================
+// CONTRATOS — Parâmetros de consulta (tabela e exportação usam a mesma regra)
+// =============================================================================
+function lerFiltrosContratosInput() {
+  contratosFiltros.status = getVal("filtro-ct-status");
+  contratosFiltros.contratante = getVal("filtro-ct-contratante").trim();
+  contratosFiltros.data_inicio = getVal("filtro-ct-data-inicio");
+  contratosFiltros.data_termino = getVal("filtro-ct-data-termino");
+}
+
+function montarParamsContratos(page = 1, limit = 50) {
+  const params = new URLSearchParams({
+    page,
+    limit,
+    order_by: "data_termino",
+    order_dir: "DESC",
+  });
+
+  if (contratosFiltros.status) params.set("status", contratosFiltros.status);
+  if (contratosFiltros.contratante) params.set("contratante", contratosFiltros.contratante);
+  if (contratosFiltros.data_inicio) params.set("data_inicio", contratosFiltros.data_inicio);
+  if (contratosFiltros.data_termino) params.set("data_termino", contratosFiltros.data_termino);
+  if (contratosFiltros.data_termino_mes) params.set("mes", contratosFiltros.data_termino_mes);
+  if (contratosFiltros.semana) params.set("semana", "1");
+
+  return params;
+}
+
+function temFiltroContratosAtivo() {
+  return Boolean(
+    contratosFiltros.status ||
+    contratosFiltros.contratante ||
+    contratosFiltros.data_inicio ||
+    contratosFiltros.data_termino ||
+    contratosFiltros.data_termino_mes ||
+    contratosFiltros.semana
+  );
+}
+
+function descricaoFiltroContratos() {
+  if (contratosFiltros.semana) {
+    const { domingo, sabado } = semanaAtual();
+    return `semana ${fmtDiaMes(domingo)}-${fmtDiaMes(sabado)}`;
+  }
+  if (contratosFiltros.data_termino_mes) return `mês ${contratosFiltros.data_termino_mes}`;
+  if (contratosFiltros.data_inicio || contratosFiltros.data_termino) {
+    return `período ${contratosFiltros.data_inicio || "..."} a ${contratosFiltros.data_termino || "..."}`;
+  }
+  if (contratosFiltros.status) return `status ${contratosFiltros.status}`;
+  if (contratosFiltros.contratante) return `contratante "${contratosFiltros.contratante}"`;
+  return "sem filtros";
+}
+
+// A API limita 500 registros por página, então a exportação percorre todas.
+const CONTRATOS_EXPORT_PAGINA = 500;
+
+async function buscarContratosParaExportar() {
+  const buscarPagina = async (page) => {
+    const resp = await contratosApiFetch(`/api/contratos?${montarParamsContratos(page, CONTRATOS_EXPORT_PAGINA)}`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    return resp.json();
+  };
+
+  const primeira = await buscarPagina(1);
+  const total = Number(primeira.total || 0);
+  const linhas = [...(primeira.data || [])];
+  const paginas = Math.ceil(total / CONTRATOS_EXPORT_PAGINA);
+
+  for (let p = 2; p <= paginas; p++) {
+    const prox = await buscarPagina(p);
+    linhas.push(...(prox.data || []));
+  }
+
+  return { linhas, total };
+}
+
+// =============================================================================
 // CONTRATOS — Carregar tabela paginada
 // =============================================================================
 async function carregarContratos(page) {
   contratosPagAtual = page || 1;
 
-  contratosFiltros.status = getVal("filtro-ct-status");
-  contratosFiltros.contratante = getVal("filtro-ct-contratante").trim();
-  contratosFiltros.data_inicio = getVal("filtro-ct-data-inicio");
-  contratosFiltros.data_termino = getVal("filtro-ct-data-termino");
+  lerFiltrosContratosInput();
 
   const loadingEl = document.getElementById("contratos-loading");
   const tableEl = document.getElementById("contratos-table");
@@ -2742,21 +2815,7 @@ async function carregarContratos(page) {
   if (tableEl) tableEl.classList.add("hidden");
 
   try {
-    const params = new URLSearchParams({
-      page: contratosPagAtual,
-      limit: 50,
-      order_by: "data_termino",
-      order_dir: "DESC",
-    });
-
-    if (contratosFiltros.status) params.set("status", contratosFiltros.status);
-    if (contratosFiltros.contratante) params.set("contratante", contratosFiltros.contratante);
-    if (contratosFiltros.data_inicio) params.set("data_inicio", contratosFiltros.data_inicio);
-    if (contratosFiltros.data_termino) params.set("data_termino", contratosFiltros.data_termino);
-    if (contratosFiltros.data_termino_mes) params.set("mes", contratosFiltros.data_termino_mes);
-    if (contratosFiltros.semana) params.set("semana", "1");
-
-    const resp = await contratosApiFetch(`/api/contratos?${params.toString()}`);
+    const resp = await contratosApiFetch(`/api/contratos?${montarParamsContratos(contratosPagAtual, 50)}`);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 
     const result = await resp.json();
@@ -2815,33 +2874,40 @@ function limparFiltrosContratos() {
 // =============================================================================
 // CONTRATOS — Exportação CSV
 // =============================================================================
-function exportarContratosCSV() {
-  contratosApiFetch("/api/contratos?limit=10000").then(r => r.json()).then(result => {
-    const data = result.data || [];
-    if (!data.length) return toast("Nenhum dado para exportar", "warning");
+function nomeArquivoContratos(ext) {
+  const sufixo = temFiltroContratosAtivo() ? "_filtrado" : "";
+  return `contratos${sufixo}.${ext}`;
+}
+
+async function exportarContratosCSV() {
+  try {
+    const { linhas, total } = await buscarContratosParaExportar();
+    if (!linhas.length) return toast("Nenhum dado para exportar", "warning");
 
     const headers = ["Código", "Contratante", "Alias/Matriz", "Início", "Término", "Forma Envio", "Status"];
-    const rows = data.map(c => [
+    const rows = linhas.map(c => [
       csvEsc(c.codigo), csvEsc(c.contratante), csvEsc(c.alias_matriz),
       csvEsc(c.data_inicio), csvEsc(c.data_termino), csvEsc(c.forma_envio), csvEsc(c.status),
     ].join(","));
 
     const csv = [headers.join(","), ...rows].join("\n");
     const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
-    downloadBlob(blob, "contratos.csv");
-    toast("CSV exportado!", "success");
-  }).catch(e => toast("Erro ao exportar: " + e.message, "error"));
+    downloadBlob(blob, nomeArquivoContratos("csv"));
+    toast(`CSV exportado! ${total} contratos (${descricaoFiltroContratos()})`, "success");
+  } catch (e) {
+    toast("Erro ao exportar: " + e.message, "error");
+  }
 }
 
 // =============================================================================
 // CONTRATOS — Exportação XLSX
 // =============================================================================
-function exportarContratosXLSX() {
-  contratosApiFetch("/api/contratos?limit=10000").then(r => r.json()).then(result => {
-    const data = result.data || [];
-    if (!data.length) return toast("Nenhum dado para exportar", "warning");
+async function exportarContratosXLSX() {
+  try {
+    const { linhas, total } = await buscarContratosParaExportar();
+    if (!linhas.length) return toast("Nenhum dado para exportar", "warning");
 
-    const ws = XLSX.utils.json_to_sheet(data.map(c => ({
+    const ws = XLSX.utils.json_to_sheet(linhas.map(c => ({
       "Código": c.codigo,
       "Contratante": c.contratante,
       "Alias/Matriz": c.alias_matriz,
@@ -2853,7 +2919,9 @@ function exportarContratosXLSX() {
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Contratos");
-    XLSX.writeFile(wb, "contratos.xlsx");
-    toast("XLSX exportado!", "success");
-  }).catch(e => toast("Erro ao exportar: " + e.message, "error"));
+    XLSX.writeFile(wb, nomeArquivoContratos("xlsx"));
+    toast(`XLSX exportado! ${total} contratos (${descricaoFiltroContratos()})`, "success");
+  } catch (e) {
+    toast("Erro ao exportar: " + e.message, "error");
+  }
 }
