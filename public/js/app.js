@@ -2977,6 +2977,7 @@ function lerFiltrosAtualizacao() {
     status_contrato: getVal("filtro-atual-status") || "",
     contratante: getVal("filtro-atual-contratante").trim(),
     incluir_reativados: document.getElementById("filtro-atual-reativados")?.checked ? "1" : "",
+    incluir_ativos: document.getElementById("filtro-atual-ativos")?.checked ? "1" : "",
   };
 }
 
@@ -2993,6 +2994,7 @@ function montarParamsAtualizacao(page = 1, limit = 50) {
   if (f.status_contrato) params.set("status_contrato", f.status_contrato);
   if (f.contratante) params.set("contratante", f.contratante);
   if (f.incluir_reativados) params.set("incluir_reativados", f.incluir_reativados);
+  if (f.incluir_ativos) params.set("incluir_ativos", f.incluir_ativos);
   return params;
 }
 
@@ -3001,6 +3003,7 @@ const ROTULO_SEGMENTO = {
   ciclo_encerrado: "ciclo encerrado (renegociar)",
   nunca_pagou: "nunca pagou",
   sem_faturamento: "contrato sem faturamento",
+  cliente_ativo: "cliente ativo (no prazo, pagando)",
 };
 
 function rotuloFiltroAtualizacao() {
@@ -3010,6 +3013,7 @@ function rotuloFiltroAtualizacao() {
   if (Number(f.dias) > 0) partes.push(`parado há ${f.dias}+ dias`);
   if (f.status_contrato) partes.push(`status ${f.status_contrato}`);
   if (f.incluir_reativados) partes.push("incl. reativados");
+  if (f.incluir_ativos) partes.push("incl. clientes ativos");
   if (f.contratante) partes.push(`"${f.contratante}"`);
   return partes.length ? partes.join(" · ") : "todos os segmentos";
 }
@@ -3042,6 +3046,7 @@ const BADGE_SEGMENTO = {
   ciclo_encerrado: ["badge-queued", "ciclo encerrado"],
   nunca_pagou: ["badge-failure", "nunca pagou"],
   sem_faturamento: ["badge-neutral", "sem faturamento"],
+  cliente_ativo: ["badge-info", "cliente ativo"],
 };
 
 function renderLinhaAtualizacao(r) {
@@ -3145,6 +3150,8 @@ function limparFiltrosAtualizacao() {
   setVal("filtro-atual-contratante", "");
   const chk = document.getElementById("filtro-atual-reativados");
   if (chk) chk.checked = false;
+  const chkAtivos = document.getElementById("filtro-atual-ativos");
+  if (chkAtivos) chkAtivos.checked = false;
   atualizarRotuloAtualizacao();
   carregarAtualizacao(1);
 }

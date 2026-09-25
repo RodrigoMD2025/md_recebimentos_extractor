@@ -253,6 +253,10 @@ body {
 .dark .badge-skipped,
 .dark .badge-neutral  { background:rgba(107,114,128,.2); color:#9ca3af; }
 
+/* cliente_ativo: dentro do prazo e pagando, nao exige acao */
+.badge-info           { background:#dbeafe; color:#1d4ed8; }
+.dark .badge-info     { background:rgba(59,130,246,.2); color:#93c5fd; }
+
 /* ── Spinner ── */
 .spinner {
     display: inline-block;

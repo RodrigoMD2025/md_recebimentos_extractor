@@ -188,10 +188,13 @@ COMMENT ON VIEW v_contratos_por_mes IS 'Contratos ativos vencendo por mês.';
 --                      de carência de 90 dias. O contrato está "Ativo" no
 --                      cadastro mas não gera nada.
 --   2. nunca_pagou      Ativo, tem parcelas emitidas e nenhuma foi paga.
---   3. atraso           Tem parcela com vencimento já passado e não paga. É a
---                      lista de cobrança. Parcelas que ainda vão vencer não
---                      contam: um contrato em dia tem parcelas futuras.
---   4. ciclo_encerrado  O ciclo terminou e o cliente não assinou outro contrato.
+--   3. cliente_ativo    Ativo, dentro do prazo do contrato e pagou nos últimos
+--                      120 dias. As parcelas vencidas em aberto são o atraso
+--                      normal da liquidação anual, não mora. Sai da lista.
+--   4. atraso           Tem parcela com vencimento já passado e não paga FORA do
+--                      prazo do contrato, ou sem pagar há mais de 120 dias.
+--                      É a lista de cobrança de verdade.
+--   5. ciclo_encerrado  O ciclo terminou e o cliente não assinou outro contrato.
 --                      É o pipeline de renegociação.
 --
 -- Cliente que já assinou contrato depois (reassinou_depois) sai da lista: ele
@@ -236,11 +239,16 @@ pagamentos AS (
             WHERE status_pagamento <> 'Pago'
               AND vencimento ~ '^\d{2}/\d{2}/\d{2}$'
               AND TO_DATE(vencimento, 'DD/MM/YY') < CURRENT_DATE
+              -- Parcela de valor zero é placeholder de extração, não dívida.
+              -- Sem isso ela vira a parcela vencida mais antiga e infla o
+              -- dias_atraso do contrato inteiro (MD2425 chegou a 237d).
+              AND NULLIF(regexp_replace(valor_parcela, '[^0-9]', '', 'g'), '')::numeric > 0
         ) AS parcelas_vencidas,
         MIN(TO_DATE(vencimento, 'DD/MM/YY')) FILTER (
             WHERE status_pagamento <> 'Pago'
               AND vencimento ~ '^\d{2}/\d{2}/\d{2}$'
               AND TO_DATE(vencimento, 'DD/MM/YY') < CURRENT_DATE
+              AND NULLIF(regexp_replace(valor_parcela, '[^0-9]', '', 'g'), '')::numeric > 0
         ) AS vencida_mais_antiga,
         SUM(
             (CASE
@@ -252,6 +260,7 @@ pagamentos AS (
             WHERE status_pagamento <> 'Pago'
               AND vencimento ~ '^\d{2}/\d{2}/\d{2}$'
               AND TO_DATE(vencimento, 'DD/MM/YY') < CURRENT_DATE
+              AND NULLIF(regexp_replace(valor_parcela, '[^0-9]', '', 'g'), '')::numeric > 0
         ) AS valor_vencido,
         SUM(
             (CASE
@@ -368,6 +377,17 @@ SELECT
             THEN 'sem_faturamento'
         WHEN b.status_contrato = 'Ativo' AND b.total_parcelas > 0 AND b.ultimo_pagamento IS NULL
             THEN 'nunca_pagou'
+        -- Cliente que ainda está dentro do prazo do contrato E pagando não é
+        -- inadimplente. A cobrança é mensal antecipada e a liquidação é anual:
+        -- 67,8% das parcelas são pagas com mais de 180 dias de atraso, então
+        -- "parcela vencida e não paga" dentro do ciclo é o comportamento normal,
+        -- não mora. Sem esta carve-out, 84 dos 143 contratos marcados como atraso
+        -- eram clientes que pagaram nos últimos 4 meses.
+        WHEN b.status_contrato = 'Ativo'
+         AND (b.termino IS NULL OR b.termino >= CURRENT_DATE)
+         AND b.ultimo_pagamento IS NOT NULL
+         AND (CURRENT_DATE - b.ultimo_pagamento) <= 120
+            THEN 'cliente_ativo'
         WHEN b.parcelas_vencidas > 0
             THEN 'atraso'
         WHEN b.ciclo_fechado
@@ -378,13 +398,17 @@ SELECT
         WHEN b.status_contrato = 'Ativo' AND b.total_parcelas = 0
          AND (b.inicio IS NULL OR CURRENT_DATE - b.inicio > 90) THEN 4
         WHEN b.status_contrato = 'Ativo' AND b.total_parcelas > 0 AND b.ultimo_pagamento IS NULL THEN 3
+        WHEN b.status_contrato = 'Ativo'
+         AND (b.termino IS NULL OR b.termino >= CURRENT_DATE)
+         AND b.ultimo_pagamento IS NOT NULL
+         AND (CURRENT_DATE - b.ultimo_pagamento) <= 120 THEN 0
         WHEN b.parcelas_vencidas > 0 THEN 1
         WHEN b.ciclo_fechado THEN 2
         ELSE 9
     END AS prioridade
 FROM base b;
 
-COMMENT ON VIEW v_sem_atualizacao IS 'Clientes que exigem ação, segmentados pelo ciclo anual: atraso_no_prazo (cobrança), ciclo_encerrado (renegociação), nunca_pagou e sem_faturamento. "cliente" falls back to alias_matriz; reassinou_depois marca quem já voltou e por isso sai da lista.';
+COMMENT ON VIEW v_sem_atualizacao IS 'Clientes que exigem ação, segmentados pelo ciclo anual: cliente_ativo (dentro do prazo, não exige ação), atraso (cobrança), ciclo_encerrado (renegociação), nunca_pagou e sem_faturamento. "cliente" falls back to alias_matriz; reassinou_depois marca quem já voltou e por isso sai da lista.';
 -- =============================================================================
 -- Tabela de relatórios de extração de contratos (para o monitor do dashboard)
 -- =============================================================================

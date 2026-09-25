@@ -25,6 +25,7 @@ const SITUACOES = new Set([
   "ciclo_encerrado",
   "nunca_pagou",
   "sem_faturamento",
+  "cliente_ativo",
 ]);
 
 // Janelas de tempo: "parado há mais de N dias" (o ciclo é anual, então a
@@ -116,6 +117,7 @@ module.exports = async function handler(req, res) {
     status_contrato,
     contratante,
     incluir_reativados,
+    incluir_ativos,
     page: pageRaw = "1",
     limit: limitRaw = "50",
     order_by: orderByRaw = "prioridade",
@@ -135,14 +137,26 @@ module.exports = async function handler(req, res) {
 
   const incluirReativados = incluir_reativados === "1" || incluir_reativados === "true";
 
+  // "cliente_ativo" nao exige acao: esta dentro do prazo e pagando. Fica fora
+  // da lista por padrao porque a cobranca e mensal antecipada com liquidacao
+  // anual, e parcela vencida em aberto dentro do ciclo e o comportamento normal.
+  const incluirAtivos = incluir_ativos === "1" || incluir_ativos === "true";
+
   const conditions = [];
   const params = [];
 
-  // A lista é só dos segmentos acionáveis. "todos" = os quatro.
+  // A lista e so dos segmentos acionaveis. "todos" = os quatro.
   if (situacao === "todos") {
-    conditions.push(
-      `situacao IN ('atraso','ciclo_encerrado','nunca_pagou','sem_faturamento')`
-    );
+    if (incluirAtivos) {
+      conditions.push(
+        `(situacao IN ('atraso','ciclo_encerrado','nunca_pagou','sem_faturamento')` +
+        ` OR situacao = 'cliente_ativo')`
+      );
+    } else {
+      conditions.push(
+        `situacao IN ('atraso','ciclo_encerrado','nunca_pagou','sem_faturamento')`
+      );
+    }
   } else {
     params.push(situacao);
     conditions.push(`situacao = $${params.length}`);
