@@ -76,6 +76,14 @@
         </span>
         <span class="nav-item-label">Contratos</span>
       </a>
+      <a href="#" class="nav-item" data-section="atualizacao">
+        <span class="nav-item-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </span>
+        <span class="nav-item-label">Sem Atualizacao</span>
+      </a>
       <a href="#" class="nav-item" data-section="settings">
         <span class="nav-item-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
@@ -519,6 +527,114 @@
           </div>
         </div>
       </section>
+      <section id="section-atualizacao" class="section-content hidden">
+        <!-- Cards de resumo -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-5">
+          <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
+            <p class="text-xs text-gray-500 mb-1">Clientes na lista</p>
+            <p id="atual-clientes" class="text-2xl font-bold text-rose-600">--</p>
+            <p id="atual-contratos" class="text-xs text-gray-400 mt-1">-- contratos</p>
+          </div>
+          <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
+            <p class="text-xs text-gray-500 mb-1">Valor mensal em risco</p>
+            <p id="atual-valor-mensal" class="text-2xl font-bold text-amber-600">--</p>
+            <p class="text-xs text-gray-400 mt-1">soma das parcelas</p>
+          </div>
+          <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
+            <p class="text-xs text-gray-500 mb-1">Parcelas em aberto</p>
+            <p id="atual-valor-aberto" class="text-2xl font-bold text-red-600">--</p>
+            <p id="atual-parcelas" class="text-xs text-gray-400 mt-1">-- parcelas</p>
+          </div>
+          <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
+            <p class="text-xs text-gray-500 mb-1">Clientes encerrados</p>
+            <p id="atual-encerrados" class="text-2xl font-bold text-gray-600 dark:text-gray-300">--</p>
+            <p id="atual-encerrados-def" class="text-xs text-gray-400 mt-1">-- sem contrato ativo</p>
+          </div>
+          <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
+            <p class="text-xs text-gray-500 mb-1">Nunca pagaram</p>
+            <p id="atual-nunca-pagaram" class="text-2xl font-bold text-purple-600">--</p>
+            <p class="text-xs text-gray-400 mt-1">com histórico, sem pagamento</p>
+          </div>
+        </div>
+
+        <!-- Filtros -->
+        <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 px-4 py-3 mb-5">
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
+            <div>
+              <label class="block text-xs font-medium text-gray-500 mb-1">Sem atualização há</label>
+              <select id="filtro-atual-meses" class="input-field text-sm">
+                <option value="3">3 meses</option>
+                <option value="6" selected>6 meses</option>
+                <option value="12">12 meses</option>
+                <option value="24">24 meses</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-500 mb-1">Situação</label>
+              <select id="filtro-atual-situacao" class="input-field text-sm">
+                <option value="todos" selected>Todos</option>
+                <option value="sem_pagamento">Sem pagamento</option>
+                <option value="encerrado">Encerrado</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-500 mb-1">Status do contrato</label>
+              <select id="filtro-atual-status" class="input-field text-sm">
+                <option value="">Todos</option>
+                <option value="Ativo">Ativo</option>
+                <option value="Inativo">Inativo</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-500 mb-1">Contratante</label>
+              <input id="filtro-atual-contratante" class="input-field text-sm" placeholder="Buscar..." />
+            </div>
+            <div class="flex items-end gap-2">
+              <button onclick="aplicarFiltrosAtualizacao()" class="px-4 py-2 text-xs bg-blue-600 text-white rounded-lg">Filtrar</button>
+              <button onclick="limparFiltrosAtualizacao()" class="px-4 py-2 text-xs border border-gray-200 dark:border-gray-700 rounded-lg">Limpar</button>
+            </div>
+          </div>
+          <div class="flex flex-wrap items-center gap-3 mt-3">
+            <label class="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+              <input id="filtro-atual-sem-ativo" type="checkbox" class="rounded border-gray-300" />
+              Somente clientes sem contrato ativo
+            </label>
+            <span id="atual-filtro-label" class="text-xs font-semibold text-rose-600 dark:text-rose-400"></span>
+            <button onclick="exportarAtualizacaoCSV()" class="ml-auto px-3 py-2 text-xs border border-blue-200 dark:border-blue-800 rounded-lg text-blue-600 hover:bg-blue-50">Exportar CSV</button>
+            <button onclick="exportarAtualizacaoXLSX()" class="px-3 py-2 text-xs border border-emerald-200 dark:border-emerald-800 rounded-lg text-emerald-600 hover:bg-emerald-50">Exportar XLSX</button>
+          </div>
+        </div>
+
+        <!-- Tabela -->
+        <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
+          <div id="atual-loading" class="p-6 text-center text-gray-400">Carregando clientes...</div>
+          <div class="overflow-x-auto">
+            <table id="atual-table" class="hidden w-full text-sm">
+              <thead class="bg-gray-50 dark:bg-gray-800/60">
+                <tr class="text-left text-xs text-gray-500 uppercase">
+                  <th class="px-5 py-3 cursor-pointer select-none" onclick="ordenarAtualizacao('contratante')">Contratante</th>
+                  <th class="px-5 py-3">Contrato</th>
+                  <th class="px-5 py-3">Situação</th>
+                  <th class="px-5 py-3 cursor-pointer select-none" onclick="ordenarAtualizacao('ultimo_pagamento')">Último pagamento</th>
+                  <th class="px-5 py-3 cursor-pointer select-none" onclick="ordenarAtualizacao('meses_sem_atualizacao')">Meses sem att.</th>
+                  <th class="px-5 py-3 cursor-pointer select-none" onclick="ordenarAtualizacao('valor_parcela')">Valor parcela</th>
+                  <th class="px-5 py-3 cursor-pointer select-none" onclick="ordenarAtualizacao('parcelas_em_aberto')">Parcelas abertas</th>
+                  <th class="px-5 py-3 cursor-pointer select-none" onclick="ordenarAtualizacao('valor_em_aberto')">Valor em aberto</th>
+                </tr>
+              </thead>
+              <tbody id="atual-tbody" class="divide-y divide-gray-200 dark:divide-gray-700"></tbody>
+            </table>
+          </div>
+          <div id="atual-paginacao" class="flex items-center justify-between px-5 py-4 border-t border-gray-200 dark:border-gray-800">
+            <span id="atual-pag-info" class="text-xs text-gray-500">--</span>
+            <div class="flex items-center gap-2">
+              <button onclick="mudarPaginaAtualizacao(-1)" class="px-3 py-1.5 text-xs border border-gray-200 dark:border-gray-700 rounded-lg">Anterior</button>
+              <span id="atual-pag-paginas" class="text-sm">1 / 1</span>
+              <button onclick="mudarPaginaAtualizacao(1)" class="px-3 py-1.5 text-xs border border-gray-200 dark:border-gray-700 rounded-lg">Próxima</button>
+            </div>
+          </div>
+        </div>
+      </section>
       <section id="section-settings" class="section-content hidden">
         <div class="max-w-2xl mx-auto space-y-4">
           <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
@@ -555,6 +671,6 @@
     <div style="font-weight:600; margin-bottom:4px;">Debug (visível)</div>
     <div id="debug-log" style="max-height:120px; overflow:auto; line-height:1.2; opacity:0.95;">Aguardando eventos...</div>
   </div>
-  <script src="js/app.js?v=7"></script>
+  <script src="js/app.js?v=8"></script>
 </body>
 </html>

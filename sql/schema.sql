@@ -179,6 +179,103 @@ ORDER BY mes ASC;
 COMMENT ON VIEW v_contratos_por_mes IS 'Contratos ativos vencendo por mês.';
 
 -- =============================================================================
+-- VIEW: v_sem_atualizacao
+-- Clientes que pararam de pagar (Ativo sem pagamento há N meses) ou
+-- encerraram o serviço (Inativo), com histórico e parcelas em aberto.
+-- Contratos Ativos sem histórico em recebimentos ficam de fora: não há
+-- evidência de inadimplência, só ausência de faturamento.
+-- =============================================================================
+CREATE OR REPLACE VIEW v_sem_atualizacao AS
+WITH pagamentos AS (
+    SELECT
+        codigo_contrato,
+        COUNT(*) AS total_parcelas,
+        MAX(TO_DATE(pago_em, 'DD/MM/YY')) FILTER (
+            WHERE status_pagamento = 'Pago' AND pago_em ~ '^\d{2}/\d{2}/\d{2}$'
+        ) AS ultimo_pagamento,
+        MAX(TO_DATE(vencimento, 'DD/MM/YY')) FILTER (
+            WHERE vencimento ~ '^\d{2}/\d{2}/\d{2}$'
+        ) AS ultimo_vencimento,
+        COUNT(*) FILTER (WHERE status_pagamento <> 'Pago') AS parcelas_em_aberto,
+        SUM(
+            (CASE
+                WHEN regexp_replace(valor_parcela, '^R\$\s*', '') LIKE '%,%'
+                    THEN REPLACE(REPLACE(regexp_replace(valor_parcela, '^R\$\s*', ''), '.', ''), ',', '.')
+                ELSE regexp_replace(valor_parcela, '^R\$\s*', '')
+            END)::numeric
+        ) FILTER (WHERE status_pagamento <> 'Pago') AS valor_em_aberto
+    FROM recebimentos
+    GROUP BY codigo_contrato
+),
+ultima_parcela AS (
+    SELECT DISTINCT ON (codigo_contrato)
+        codigo_contrato,
+        (CASE
+            WHEN regexp_replace(valor_parcela, '^R\$\s*', '') LIKE '%,%'
+                THEN REPLACE(REPLACE(regexp_replace(valor_parcela, '^R\$\s*', ''), '.', ''), ',', '.')
+            ELSE regexp_replace(valor_parcela, '^R\$\s*', '')
+        END)::numeric AS valor_parcela
+    FROM recebimentos
+    WHERE status_pagamento = 'Pago'
+    ORDER BY codigo_contrato, TO_DATE(vencimento, 'DD/MM/YY') DESC
+),
+base AS (
+    SELECT
+        c.id,
+        c.contratante,
+        c.alias_matriz,
+        COALESCE(
+            NULLIF(btrim(c.contratante), ''),
+            NULLIF(btrim(c.alias_matriz), ''),
+            c.codigo
+        ) AS cliente,
+        c.codigo,
+        c.status AS status_contrato,
+        c.data_inicio,
+        c.data_termino,
+        c.forma_envio,
+        COALESCE(p.total_parcelas, 0) AS total_parcelas,
+        p.ultimo_pagamento,
+        p.ultimo_vencimento,
+        up.valor_parcela,
+        COALESCE(p.parcelas_em_aberto, 0) AS parcelas_em_aberto,
+        COALESCE(p.valor_em_aberto, 0) AS valor_em_aberto,
+        EXISTS (
+            SELECT 1 FROM contratos a
+            WHERE a.status = 'Ativo'
+              AND lower(trim(a.contratante)) = lower(trim(c.contratante))
+        ) AS possui_contrato_ativo
+    FROM contratos c
+    LEFT JOIN pagamentos p ON p.codigo_contrato = c.codigo
+    LEFT JOIN ultima_parcela up ON up.codigo_contrato = c.codigo
+)
+SELECT
+    cliente,
+    contratante,
+    codigo,
+    alias_matriz,
+    status_contrato,
+    data_inicio,
+    data_termino,
+    forma_envio,
+    total_parcelas,
+    ultimo_pagamento,
+    ultimo_vencimento,
+    valor_parcela,
+    parcelas_em_aberto,
+    valor_em_aberto,
+    possui_contrato_ativo,
+    CASE WHEN status_contrato = 'Inativo' THEN 'Encerrado' ELSE 'Sem pagamento' END AS situacao,
+    CASE
+        WHEN status_contrato = 'Ativo' AND ultimo_pagamento IS NOT NULL
+        THEN GREATEST(0, (EXTRACT(YEAR FROM age(CURRENT_DATE, ultimo_pagamento)) * 12
+             + EXTRACT(MONTH FROM age(CURRENT_DATE, ultimo_pagamento)))::int)
+        ELSE NULL
+    END AS meses_sem_atualizacao
+FROM base;
+
+COMMENT ON VIEW v_sem_atualizacao IS 'Contratos sem atualização: sem pagamento ou encerrados, com último pagamento, histórico e parcelas em aberto. "cliente" falls back to alias_matriz quando o contratante vem vazio.';
+-- =============================================================================
 -- Tabela de relatórios de extração de contratos (para o monitor do dashboard)
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS extracoes_contratos (

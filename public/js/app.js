@@ -2488,6 +2488,16 @@ function csvEsc(val) {
   return s;
 }
 
+function downloadBlob(blob, filename) {
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+}
+
 function trunc(str, n) {
   const s = String(str || "");
   return s.length > n ? s.slice(0, n - 1) + "…" : s;
@@ -2524,6 +2534,15 @@ let contratosTotalPags = 1;
 let contratosInicializado = false;
 let chartContratosMes = null;
 
+// =============================================================================
+// SEM ATUALIZAÇÃO — variáveis globais
+// =============================================================================
+let atualizacaoPagAtual = 1;
+let atualizacaoTotal = 0;
+let atualizacaoTotalPags = 1;
+let atualizacaoOrdem = { coluna: "meses_sem_atualizacao", dir: "DESC" };
+let atualizacaoInicializada = false;
+
 // Atualizar navigateTo para incluir contratos
 const _originalNavigateTo = navigateTo;
 navigateTo = function(section) {
@@ -2535,6 +2554,7 @@ navigateTo = function(section) {
     history: "Histórico",
     dados: "Dados",
     contratos: "Contratos",
+    atualizacao: "Sem Atualização",
     settings: "Configurações",
   };
   const titleEl = document.getElementById("page-title");
@@ -2545,6 +2565,11 @@ navigateTo = function(section) {
     carregarGraficoContratos();
     carregarContratos(1);
     contratosInicializado = true;
+  }
+
+  if (section === "atualizacao" && !atualizacaoInicializada) {
+    carregarAtualizacao(1);
+    atualizacaoInicializada = true;
   }
 };
 
@@ -2921,6 +2946,259 @@ async function exportarContratosXLSX() {
     XLSX.utils.book_append_sheet(wb, ws, "Contratos");
     XLSX.writeFile(wb, nomeArquivoContratos("xlsx"));
     toast(`XLSX exportado! ${total} contratos (${descricaoFiltroContratos()})`, "success");
+  } catch (e) {
+    toast("Erro ao exportar: " + e.message, "error");
+  }
+}
+
+// =============================================================================
+// SEM ATUALIZAÇÃO — Clientes que pararam de pagar ou encerraram o serviço
+// =============================================================================
+const ATUALIZACAO_EXPORT_PAGINA = 500;
+
+function fmtMoeda(valor) {
+  const n = Number(valor) || 0;
+  return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+function fmtDataIso(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("pt-BR");
+}
+
+function lerFiltrosAtualizacao() {
+  return {
+    meses: getVal("filtro-atual-meses") || "6",
+    situacao: getVal("filtro-atual-situacao") || "todos",
+    status_contrato: getVal("filtro-atual-status") || "",
+    contratante: getVal("filtro-atual-contratante").trim(),
+    sem_contrato_ativo: document.getElementById("filtro-atual-sem-ativo")?.checked ? "1" : "",
+  };
+}
+
+function montarParamsAtualizacao(page = 1, limit = 50) {
+  const f = lerFiltrosAtualizacao();
+  const params = new URLSearchParams({
+    page,
+    limit,
+    order_by: atualizacaoOrdem.coluna,
+    order_dir: atualizacaoOrdem.dir,
+  });
+  params.set("meses", f.meses);
+  params.set("situacao", f.situacao);
+  if (f.status_contrato) params.set("status_contrato", f.status_contrato);
+  if (f.contratante) params.set("contratante", f.contratante);
+  if (f.sem_contrato_ativo) params.set("sem_contrato_ativo", f.sem_contrato_ativo);
+  return params;
+}
+
+function rotuloFiltroAtualizacao() {
+  const f = lerFiltrosAtualizacao();
+  const partes = [`${f.meses}+ meses`];
+  if (f.situacao === "sem_pagamento") partes.push("sem pagamento");
+  if (f.situacao === "encerrado") partes.push("encerrados");
+  if (f.status_contrato) partes.push(`status ${f.status_contrato}`);
+  if (f.sem_contrato_ativo) partes.push("sem contrato ativo");
+  if (f.contratante) partes.push(`"${f.contratante}"`);
+  return partes.join(" · ");
+}
+
+function atualizarRotuloAtualizacao() {
+  const lbl = document.getElementById("atual-filtro-label");
+  if (lbl) lbl.textContent = rotuloFiltroAtualizacao();
+}
+
+function renderCardsAtualizacao(resumo) {
+  setTxt("atual-clientes", resumo.clientes);
+  setTxt("atual-contratos", `${resumo.contratos} contratos`);
+  setTxt("atual-valor-mensal", fmtMoeda(resumo.valor_mensal));
+  setTxt("atual-valor-aberto", fmtMoeda(resumo.valor_aberto));
+  setTxt("atual-parcelas", `${resumo.parcelas_aberto} parcelas`);
+  setTxt("atual-encerrados", resumo.clientes_encerrados);
+  setTxt("atual-encerrados-def", `${resumo.clientes_encerrados_definitivo} sem contrato ativo`);
+  setTxt("atual-nunca-pagaram", resumo.clientes_nunca_pagaram);
+}
+
+function renderLinhaAtualizacao(r) {
+  const meses = r.meses_sem_atualizacao;
+  const mesesBadge =
+    r.situacao === "Encerrado"
+      ? `<span class="badge badge-neutral">Encerrado</span>`
+      : meses === null || meses === undefined
+        ? `<span class="badge badge-failure">nunca pagou</span>`
+        : `<span class="badge ${meses >= 12 ? "badge-failure" : "badge-queued"}">${meses} ${meses === 1 ? "mês" : "meses"}</span>`;
+
+  const tagAtivo =
+    r.situacao === "Encerrado" && r.possui_contrato_ativo
+      ? `<span class="text-[10px] text-gray-400"> (cliente ainda ativo)</span>`
+      : "";
+
+  return `
+    <tr>
+      <td class="px-5 py-3">${esc(r.cliente)}${tagAtivo}</td>
+      <td class="px-5 py-3 font-mono text-xs font-semibold">${esc(r.codigo)}</td>
+      <td class="px-5 py-3">${mesesBadge}</td>
+      <td class="px-5 py-3 text-xs">${esc(fmtDataIso(r.ultimo_pagamento))}</td>
+      <td class="px-5 py-3 text-xs font-semibold">${meses === null || meses === undefined ? "—" : meses}</td>
+      <td class="px-5 py-3 text-xs">${r.valor_parcela ? esc(fmtMoeda(r.valor_parcela)) : "—"}</td>
+      <td class="px-5 py-3 text-xs">${r.parcelas_em_aberto || 0}</td>
+      <td class="px-5 py-3 text-xs font-semibold ${Number(r.valor_em_aberto) > 0 ? "text-red-600" : ""}">${esc(fmtMoeda(r.valor_em_aberto))}</td>
+    </tr>
+  `;
+}
+
+async function carregarAtualizacao(page) {
+  atualizacaoPagAtual = page || 1;
+  atualizarRotuloAtualizacao();
+
+  const loadingEl = document.getElementById("atual-loading");
+  const tableEl = document.getElementById("atual-table");
+  const tbody = document.getElementById("atual-tbody");
+
+  if (loadingEl) loadingEl.classList.remove("hidden");
+  if (tableEl) tableEl.classList.add("hidden");
+
+  try {
+    const resp = await contratosApiFetch(`/api/sem-atualizacao?${montarParamsAtualizacao(atualizacaoPagAtual, 50)}`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+    const result = await resp.json();
+    if (result.pending_schema) {
+      if (tableEl) tableEl.classList.add("hidden");
+      setTxt("atual-loading", result.error || "View v_sem_atualizacao ausente no banco.");
+      loadingEl?.classList.remove("hidden");
+      return;
+    }
+
+    const data = result.data || [];
+    atualizacaoTotal = result.total || 0;
+    atualizacaoTotalPags = result.pages || 1;
+    renderCardsAtualizacao(result.resumo || {});
+
+    if (!data.length) {
+      tbody.innerHTML = `<tr><td colspan="8" class="px-5 py-6 text-center text-gray-400">Nenhum cliente encontrado com esses filtros.</td></tr>`;
+    } else {
+      tbody.innerHTML = data.map(renderLinhaAtualizacao).join("");
+    }
+
+    if (tableEl) tableEl.classList.remove("hidden");
+    if (loadingEl) loadingEl.classList.add("hidden");
+
+    setTxt("atual-pag-info", `${atualizacaoTotal} registros`);
+    setTxt("atual-pag-paginas", `${atualizacaoPagAtual} / ${atualizacaoTotalPags}`);
+  } catch (e) {
+    console.error("[atualizacao] Erro ao carregar:", e);
+    if (tableEl) tableEl.classList.add("hidden");
+    if (loadingEl) {
+      loadingEl.classList.remove("hidden");
+      loadingEl.textContent = `Erro ao carregar: ${e.message}`;
+    }
+    toast(`Erro ao carregar clientes sem atualização: ${e.message}`, "error");
+  }
+}
+
+function aplicarFiltrosAtualizacao() {
+  atualizarRotuloAtualizacao();
+  carregarAtualizacao(1);
+}
+
+function limparFiltrosAtualizacao() {
+  setVal("filtro-atual-meses", "6");
+  setVal("filtro-atual-situacao", "todos");
+  setVal("filtro-atual-status", "");
+  setVal("filtro-atual-contratante", "");
+  const chk = document.getElementById("filtro-atual-sem-ativo");
+  if (chk) chk.checked = false;
+  atualizarRotuloAtualizacao();
+  carregarAtualizacao(1);
+}
+
+function ordenarAtualizacao(coluna) {
+  if (atualizacaoOrdem.coluna === coluna) {
+    atualizacaoOrdem.dir = atualizacaoOrdem.dir === "DESC" ? "ASC" : "DESC";
+  } else {
+    atualizacaoOrdem = { coluna, dir: "DESC" };
+  }
+  carregarAtualizacao(1);
+}
+
+function mudarPaginaAtualizacao(delta) {
+  const novaPag = atualizacaoPagAtual + delta;
+  if (novaPag < 1 || novaPag > atualizacaoTotalPags) return;
+  carregarAtualizacao(novaPag);
+}
+
+async function buscarAtualizacaoParaExportar() {
+  const buscarPagina = async (page) => {
+    const resp = await contratosApiFetch(`/api/sem-atualizacao?${montarParamsAtualizacao(page, ATUALIZACAO_EXPORT_PAGINA)}`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    return resp.json();
+  };
+
+  const primeira = await buscarPagina(1);
+  const total = Number(primeira.total || 0);
+  const linhas = [...(primeira.data || [])];
+  const paginas = Math.ceil(total / ATUALIZACAO_EXPORT_PAGINA);
+
+  for (let p = 2; p <= paginas; p++) {
+    const prox = await buscarPagina(p);
+    linhas.push(...(prox.data || []));
+  }
+
+  return { linhas, total };
+}
+
+function linhaExportAtualizacao(r) {
+  return {
+    "Contratante": r.cliente,
+    "Contrato": r.codigo,
+    "Alias/Matriz": r.alias_matriz,
+    "Situação": r.situacao,
+    "Status": r.status_contrato,
+    "Cliente ainda ativo": r.possui_contrato_ativo ? "Sim" : "Não",
+    "Início": r.data_inicio,
+    "Término": r.data_termino,
+    "Último vencimento": r.ultimo_vencimento ? fmtDataIso(r.ultimo_vencimento) : "",
+    "Último pagamento": r.ultimo_pagamento ? fmtDataIso(r.ultimo_pagamento) : "",
+    "Meses sem atualização": r.meses_sem_atualizacao ?? "",
+    "Parcelas no histórico": r.total_parcelas,
+    "Valor da parcela": r.valor_parcela != null ? Number(r.valor_parcela).toFixed(2) : "",
+    "Parcelas em aberto": r.parcelas_em_aberto,
+    "Valor em aberto": r.valor_em_aberto != null ? Number(r.valor_em_aberto).toFixed(2) : "",
+  };
+}
+
+async function exportarAtualizacaoCSV() {
+  try {
+    const { linhas, total } = await buscarAtualizacaoParaExportar();
+    if (!linhas.length) return toast("Nenhum dado para exportar", "warning");
+
+    const registros = linhas.map(linhaExportAtualizacao);
+    const headers = Object.keys(registros[0]);
+    const csv = [
+      headers.join(","),
+      ...registros.map((reg) => headers.map((h) => csvEsc(reg[h])).join(",")),
+    ].join("\n");
+
+    downloadBlob(new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" }), "clientes_sem_atualizacao.csv");
+    toast(`CSV exportado! ${total} contratos (${rotuloFiltroAtualizacao()})`, "success");
+  } catch (e) {
+    toast("Erro ao exportar: " + e.message, "error");
+  }
+}
+
+async function exportarAtualizacaoXLSX() {
+  try {
+    const { linhas, total } = await buscarAtualizacaoParaExportar();
+    if (!linhas.length) return toast("Nenhum dado para exportar", "warning");
+
+    const ws = XLSX.utils.json_to_sheet(linhas.map(linhaExportAtualizacao));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Sem Atualização");
+    XLSX.writeFile(wb, "clientes_sem_atualizacao.xlsx");
+    toast(`XLSX exportado! ${total} contratos (${rotuloFiltroAtualizacao()})`, "success");
   } catch (e) {
     toast("Erro ao exportar: " + e.message, "error");
   }
