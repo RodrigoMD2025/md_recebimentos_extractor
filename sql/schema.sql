@@ -240,11 +240,25 @@ base AS (
         up.valor_parcela,
         COALESCE(p.parcelas_em_aberto, 0) AS parcelas_em_aberto,
         COALESCE(p.valor_em_aberto, 0) AS valor_em_aberto,
-        EXISTS (
+        -- "O cliente tem contrato ativo?" Compara pela identidade do cliente
+        -- (mesmo fallback de "cliente"), e nunca por contratante vazio: '' = ''
+        -- casaria qualquer contrato sem nome e marcaria Inativos como "cliente
+        -- ainda ativo" indevidamente. Uma linha Ativo é ela mesma o contrato
+        -- ativo, então o flag só olha para os demais contratos do mesmo cliente.
+        (c.status = 'Ativo' OR EXISTS (
             SELECT 1 FROM contratos a
             WHERE a.status = 'Ativo'
-              AND lower(trim(a.contratante)) = lower(trim(c.contratante))
-        ) AS possui_contrato_ativo
+              AND a.codigo <> c.codigo
+              AND COALESCE(
+                    NULLIF(btrim(a.contratante), ''),
+                    NULLIF(btrim(a.alias_matriz), ''),
+                    a.codigo
+                  ) = COALESCE(
+                    NULLIF(btrim(c.contratante), ''),
+                    NULLIF(btrim(c.alias_matriz), ''),
+                    c.codigo
+                  )
+        )) AS possui_contrato_ativo
     FROM contratos c
     LEFT JOIN pagamentos p ON p.codigo_contrato = c.codigo
     LEFT JOIN ultima_parcela up ON up.codigo_contrato = c.codigo
