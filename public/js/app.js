@@ -2518,7 +2518,7 @@ async function contratosApiFetch(path) {
 // CONTRATOS — Variáveis globais
 // =============================================================================
 let contratosPagAtual = 1;
-let contratosFiltros = { status: "", contratante: "", data_inicio: "", data_termino: "" };
+let contratosFiltros = { status: "", contratante: "", data_inicio: "", data_termino: "", data_termino_mes: "", semana: false };
 let contratosTotal = 0;
 let contratosTotalPags = 1;
 let contratosInicializado = false;
@@ -2551,22 +2551,29 @@ navigateTo = function(section) {
 // =============================================================================
 // CONTRATOS — Carregar alertas (cards)
 // =============================================================================
+function semanaAtual() {
+  const hoje = new Date();
+  const domingo = new Date(hoje);
+  domingo.setDate(hoje.getDate() - hoje.getDay());
+  const sabado = new Date(domingo);
+  sabado.setDate(domingo.getDate() + 6);
+  return { domingo, sabado };
+}
+
+function fmtDiaMes(d) {
+  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+}
+
 async function carregarAlertasContratos() {
   try {
-    const hoje = new Date();
-    const dia = hoje.getDay();
-    const domingo = new Date(hoje);
-    domingo.setDate(hoje.getDate() - dia);
-    const sabado = new Date(domingo);
-    sabado.setDate(domingo.getDate() + 6);
-    const fmt = (d) => d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+    const { domingo, sabado } = semanaAtual();
     const labelEl = document.getElementById("alerta-semana-label");
-    if (labelEl) labelEl.textContent = `Esta Semana (${fmt(domingo)} a ${fmt(sabado)})`;
+    if (labelEl) labelEl.textContent = `Esta Semana (${fmtDiaMes(domingo)} a ${fmtDiaMes(sabado)})`;
 
-    const respSemana = await contratosApiFetch("/api/contratos?semana=1");
+    const respSemana = await contratosApiFetch("/api/contratos?semana=1&limit=1");
     if (respSemana.ok) {
       const resultSemana = await respSemana.json();
-      setTxt("alerta-semana", Number(resultSemana.data?.[0]?.total || 0));
+      setTxt("alerta-semana", Number(resultSemana.total || 0));
     }
 
     const resp = await contratosApiFetch("/api/contratos?alerta=1");
@@ -2630,12 +2637,7 @@ async function carregarGraficoContratos() {
         maintainAspectRatio: false,
         onClick: (e, elements) => {
           if (elements.length === 0) return;
-          const idx = elements[0].index;
-          const mesLabel = labels[idx];
-          contratosFiltros.data_termino_mes = contratosFiltros.data_termino_mes === mesLabel ? "" : mesLabel;
-          const lbl = document.getElementById("ct-filtro-mes-label");
-          if (lbl) lbl.textContent = contratosFiltros.data_termino_mes ? `Mês: ${contratosFiltros.data_termino_mes}` : "";
-          carregarContratos(1);
+          alternarFiltroMes(labels[elements[0].index]);
         },
         plugins: {
           legend: { display: false },
@@ -2669,6 +2671,59 @@ async function carregarGraficoContratos() {
 }
 
 // =============================================================================
+// CONTRATOS — Filtros rápidos (card da semana / clique no gráfico)
+// =============================================================================
+function atualizarChipFiltroContratos() {
+  const lbl = document.getElementById("ct-filtro-mes-label");
+  if (!lbl) return;
+  if (contratosFiltros.semana) {
+    const { domingo, sabado } = semanaAtual();
+    lbl.textContent = `Semana: ${fmtDiaMes(domingo)} a ${fmtDiaMes(sabado)}`;
+  } else {
+    lbl.textContent = contratosFiltros.data_termino_mes ? `Mês: ${contratosFiltros.data_termino_mes}` : "";
+  }
+}
+
+function atualizarCardSemana() {
+  const card = document.getElementById("card-ct-semana");
+  if (!card) return;
+  card.classList.toggle("ring-2", contratosFiltros.semana);
+  card.classList.toggle("ring-indigo-500", contratosFiltros.semana);
+  card.classList.toggle("border-indigo-400", contratosFiltros.semana);
+  card.classList.toggle("dark:border-indigo-500", contratosFiltros.semana);
+}
+
+function alternarFiltroSemana() {
+  contratosFiltros.semana = !contratosFiltros.semana;
+  if (contratosFiltros.semana) {
+    setVal("filtro-ct-data-inicio", "");
+    setVal("filtro-ct-data-termino", "");
+    setVal("filtro-ct-status", "Ativo");
+    contratosFiltros.data_termino_mes = "";
+  }
+  atualizarChipFiltroContratos();
+  atualizarCardSemana();
+  carregarContratos(1);
+}
+
+function alternarFiltroMes(mesLabel) {
+  contratosFiltros.data_termino_mes = contratosFiltros.data_termino_mes === mesLabel ? "" : mesLabel;
+  if (contratosFiltros.data_termino_mes) contratosFiltros.semana = false;
+  atualizarChipFiltroContratos();
+  atualizarCardSemana();
+  carregarContratos(1);
+}
+
+function aplicarFiltrosContratos() {
+  if (contratosFiltros.semana) {
+    contratosFiltros.semana = false;
+    atualizarChipFiltroContratos();
+    atualizarCardSemana();
+  }
+  carregarContratos(1);
+}
+
+// =============================================================================
 // CONTRATOS — Carregar tabela paginada
 // =============================================================================
 async function carregarContratos(page) {
@@ -2699,6 +2754,7 @@ async function carregarContratos(page) {
     if (contratosFiltros.data_inicio) params.set("data_inicio", contratosFiltros.data_inicio);
     if (contratosFiltros.data_termino) params.set("data_termino", contratosFiltros.data_termino);
     if (contratosFiltros.data_termino_mes) params.set("mes", contratosFiltros.data_termino_mes);
+    if (contratosFiltros.semana) params.set("semana", "1");
 
     const resp = await contratosApiFetch(`/api/contratos?${params.toString()}`);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -2746,13 +2802,13 @@ function mudarPaginaContratos(delta) {
 }
 
 function limparFiltrosContratos() {
-  contratosFiltros = { status: "", contratante: "", data_inicio: "", data_termino: "", data_termino_mes: "" };
+  contratosFiltros = { status: "", contratante: "", data_inicio: "", data_termino: "", data_termino_mes: "", semana: false };
   setVal("filtro-ct-status", "");
   setVal("filtro-ct-contratante", "");
   setVal("filtro-ct-data-inicio", "");
   setVal("filtro-ct-data-termino", "");
-  const lbl = document.getElementById("ct-filtro-mes-label");
-  if (lbl) lbl.textContent = "";
+  atualizarChipFiltroContratos();
+  atualizarCardSemana();
   carregarContratos(1);
 }
 

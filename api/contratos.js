@@ -72,23 +72,6 @@ async function handleGet(req, res) {
     ? `CASE WHEN data_termino ~ '^\\d{2}/\\d{2}/\\d{4}$' THEN TO_DATE(data_termino, 'DD/MM/YYYY') END ${orderDir} NULLS LAST, CASE WHEN data_termino !~ '^\\d{2}/\\d{2}/\\d{4}$' THEN data_termino END ${orderDir} NULLS LAST`
     : `${orderByRawSafe} ${orderDir}`;
 
-  // Rota especial: /api/contratos?semana=1 retorna contratos vencendo esta semana (dom-sab)
-  if (String(req.query?.semana) === "1") {
-    try {
-      const weekResult = await query(`
-        SELECT COUNT(*) AS total FROM contratos
-        WHERE status = 'Ativo'
-          AND data_termino ~ '^\\d{2}/\\d{2}/\\d{4}$'
-          AND TO_DATE(data_termino, 'DD/MM/YYYY') >= CURRENT_DATE - EXTRACT(DOW FROM CURRENT_DATE)::INT
-          AND TO_DATE(data_termino, 'DD/MM/YYYY') <= CURRENT_DATE - EXTRACT(DOW FROM CURRENT_DATE)::INT + 6
-      `, []);
-      return res.status(200).json({ data: weekResult.rows });
-    } catch (dbErr) {
-      console.error("[contratos] Erro ao buscar semana:", dbErr);
-      return res.status(500).json({ error: "Erro interno ao consultar semana." });
-    }
-  }
-
   // Rota especial: /api/contratos?alerta=1 retorna apenas a view de alertas
   if (String(alerta) === "1" || String(alerta) === "true") {
     try {
@@ -196,6 +179,13 @@ async function handleGet(req, res) {
   if (contratante) {
     params.push(`%${contratante}%`);
     conditions.push(`contratante ILIKE $${params.length}`);
+  }
+
+  if (String(semana) === "1" || String(semana) === "true") {
+    conditions.push(`status = 'Ativo'`);
+    conditions.push(`data_termino ~ '^\\d{2}/\\d{2}/\\d{4}$'`);
+    conditions.push(`TO_DATE(data_termino, 'DD/MM/YYYY') >= CURRENT_DATE - EXTRACT(DOW FROM CURRENT_DATE)::INT`);
+    conditions.push(`TO_DATE(data_termino, 'DD/MM/YYYY') <= CURRENT_DATE - EXTRACT(DOW FROM CURRENT_DATE)::INT + 6`);
   }
 
   if (mes) {
