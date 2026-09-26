@@ -63,6 +63,7 @@ const SELECT_FIELDS = [
   "situacao",
   "prioridade",
   "duracao_dias",
+  "cancelado_confirmado",
 ].join(", ");
 
 const RESUMO_FIELDS = `
@@ -155,6 +156,12 @@ module.exports = async function handler(req, res) {
   const conditions = [];
   const params = [];
 
+  // Cliente que a gestao ja confirmou como cancelado nao e alvo de acao: nao ha
+  // o que cobrar nem o que renegociar. Entra aqui uma unica vez, fora de todos os
+  // filtros, para nao depender de cada combinacao -- injetar a condicao dentro
+  // dos filtros ja vazou uma vez num OR, porque AND liga antes que OR.
+  conditions.push("NOT cancelado_confirmado");
+
   // A lista e so dos segmentos acionaveis. "todos" = os quatro.
   if (situacao === "todos") {
     if (incluirAtivos) {
@@ -218,13 +225,18 @@ module.exports = async function handler(req, res) {
   if (!incluirReativados) {
     cardConditions.push(`NOT reassinou_depois`);
   }
+  // Mesma supressao da lista: os cards contam navegacao, e um cancelado
+  // confirmado nao pode inflar nenhum deles.
+  cardConditions.push(`NOT cancelado_confirmado`);
   const cardWhere = `WHERE situacao IN ('atraso','nao_ativo','corte_antecipado','ciclo_encerrado','nunca_pagou','sem_faturamento')${
     cardConditions.length ? " AND " + cardConditions.join(" AND ") : ""
   }`;
 
-  // Prioridade fixa a ordem de ação (1 cobrança, 2 renegociação, 3 nunca
-  // pagou, 4 parado sem faturamento). Dentro do grupo, o lead mais recente
-  // vem primeiro — é o que ainda está dentro da janela de retorno.
+  // Prioridade = ordem de acao, e nao de gravidade do cliente: 0 cliente ativo
+  // (nada a fazer), 1 cobranca, 2 renovacao pendente (papelada), 3 corte
+  // antecipado, 4 ciclo encerrado (churn, o unico detector validado), 5 nunca
+  // pagou, 6 contrato sem faturamento. Dentro do grupo, o lead mais recente vem
+  // primeiro - e o que ainda esta dentro da janela de retorno.
   const secondary = orderBy === "prioridade" ? "dias_sem_contrato ASC NULLS LAST" : `${orderBy} ${orderDir} NULLS LAST`;
   // NULLS LAST explicito: com DESC o Postgres colocaria vazios primeiro, e
   // "linhas sem atraso" no topo da lista de cobrança seria o oposto do útil.

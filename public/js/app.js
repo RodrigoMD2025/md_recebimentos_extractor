@@ -3004,7 +3004,7 @@ const ROTULO_SEGMENTO = {
   nunca_pagou: "nunca pagou",
   sem_faturamento: "contrato sem faturamento",
   cliente_ativo: "cliente ativo (no prazo, pagando)",
-  nao_ativo: "cliente não ativo (sem contrato em vigor)",
+  nao_ativo: "renovação pendente (contrato vencido, cliente operando)",
   corte_antecipado: "cortou o ciclo antes do prazo",
 };
 
@@ -3029,7 +3029,7 @@ function renderCardsAtualizacao(resumo) {
   setTxt("atual-valor-vencido", fmtMoeda(resumo.valor_vencido));
   setTxt("atual-atraso-info", `${resumo.clientes_atraso || 0} clientes · ${resumo.parcelas_vencidas || 0} parcelas vencidas`);
   setTxt("atual-clientes-nao-ativos", resumo.clientes_nao_ativos);
-  setTxt("atual-nao-ativo-info", "sem contrato em vigor, na carência");
+  setTxt("atual-nao-ativo-info", "contrato vencido, cliente operando");
   setTxt("atual-clientes-corte-antecipado", resumo.clientes_corte_antecipado);
   setTxt("atual-corte-antecipado-info", "saíram antes do prazo");
   setTxt("atual-clientes-ciclo", resumo.clientes_ciclo_encerrado);
@@ -3055,7 +3055,7 @@ const BADGE_SEGMENTO = {
   nunca_pagou: ["badge-failure", "nunca pagou"],
   sem_faturamento: ["badge-neutral", "sem faturamento"],
   cliente_ativo: ["badge-info", "cliente ativo"],
-  nao_ativo: ["badge-neutral", "não ativo"],
+  nao_ativo: ["badge-info", "renovação pendente"],
   corte_antecipado: ["badge-cancelled", "cortou o ciclo"],
 };
 

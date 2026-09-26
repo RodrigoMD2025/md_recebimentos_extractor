@@ -546,9 +546,9 @@
           </button>
           <button onclick="filtrarPorSituacaoAtualizacao('nao_ativo')" id="card-nao-ativo"
                   class="text-left bg-white dark:bg-gray-900 rounded-xl border border-rose-200 dark:border-rose-900 p-4 hover:ring-2 hover:ring-rose-400 transition">
-            <p class="text-xs text-gray-500 mb-1">2 · Cliente não ativo</p>
+            <p class="text-xs text-gray-500 mb-1">2 · Renovação pendente</p>
             <p id="atual-clientes-nao-ativos" class="text-2xl font-bold text-rose-600">--</p>
-            <p id="atual-nao-ativo-info" class="text-xs text-gray-400 mt-1">-- sem contrato em vigor</p>
+            <p id="atual-nao-ativo-info" class="text-xs text-gray-400 mt-1">-- contrato vencido, cliente operando</p>
           </button>
           <button onclick="filtrarPorSituacaoAtualizacao('corte_antecipado')" id="card-corte-antecipado"
                   class="text-left bg-white dark:bg-gray-900 rounded-xl border border-fuchsia-200 dark:border-fuchsia-900 p-4 hover:ring-2 hover:ring-fuchsia-400 transition">
@@ -594,7 +594,7 @@
               <select id="filtro-atual-situacao" class="input-field text-sm">
                 <option value="todos" selected>Todos</option>
                 <option value="atraso">Vencido (cobrança)</option>
-                <option value="nao_ativo">Cliente não ativo (sem contrato em vigor)</option>
+                <option value="nao_ativo">Renovação pendente (contrato vencido)</option>
                 <option value="corte_antecipado">Cortou o ciclo antes do prazo</option>
                 <option value="ciclo_encerrado">Ciclo encerrado (renegociar)</option>
                 <option value="nunca_pagou">Nunca pagou</option>
@@ -702,6 +702,6 @@
     <div style="font-weight:600; margin-bottom:4px;">Debug (visível)</div>
     <div id="debug-log" style="max-height:120px; overflow:auto; line-height:1.2; opacity:0.95;">Aguardando eventos...</div>
   </div>
-  <script src="js/app.js?v=12"></script>
+  <script src="js/app.js?v=13"></script>
 </body>
 </html>

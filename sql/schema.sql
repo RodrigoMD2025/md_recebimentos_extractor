@@ -179,6 +179,88 @@ ORDER BY mes ASC;
 COMMENT ON VIEW v_contratos_por_mes IS 'Contratos ativos vencendo por mês.';
 
 -- =============================================================================
+-- TABELA: clientes_cancelados
+-- Cancelamentos confirmados pela gestao.
+-- =============================================================================
+-- Resolvido UMA VEZ a partir de _stg_cancel (94 nomes informais, tipo "Cerrado
+-- Shopping") para o `cliente` canonico que a view usa, e gravado aqui de forma
+-- LITERAL de proposito: a view faz join por igualdade exata, sem fuzzy matching
+-- em tempo de consulta. Casar nome informal dentro do SQL errava -- "Cerrado
+-- Shopping" ia para o MD778 em vez do MD2339 -- e um falso POSITIVO esconderia
+-- um cliente vivo da lista, que e o pior erro possivel aqui.
+--
+-- Dos 94 nomes da lista, 40 resolveram por containment de palavra. Os outros
+-- 54 nao foram resolvidos: entrar com nome errado esconde cliente vivo, entao
+-- a ausencia e' o default seguro. Preencher esta tabela e' imediato e nao exige
+-- deploy -- e' o jeito de incorporar a confirmacao da gestao ao sistema.
+--
+-- Data de saida (cancelado_em) fica em _stg_cancel, que a gestao mantem.
+-- Aqui so interessa o fato: este cliente nao e' mais alvo de cobranca nem de
+-- renegociacao.
+CREATE TABLE IF NOT EXISTS clientes_cancelados (
+    cliente       TEXT NOT NULL PRIMARY KEY,
+    cancelado_em  TEXT NOT NULL DEFAULT ''
+);
+
+COMMENT ON TABLE clientes_cancelados IS
+    'Clientes confirmados como cancelados pela gestao. Suprime o cliente da lista de acao: nao ha o que cobrar nem o que renegociar. Origem: _stg_cancel, resolvido para o cliente canonico.';
+
+INSERT INTO clientes_cancelados (cliente) VALUES
+    ('A Página Distribuidora de Livros Ltda'),
+    ('A. Angeloni &C Cia LTDA'),
+    ('ALASC ASSOCIAÇÃO LOJISTAS ARACATUBA SHOPPING CENTER'),
+    ('ASSOCIACAO DO FUNDO DE PROMOCAO COLETIVA DOS LOJISTAS DO CENTER SHOPPING RIO'),
+    ('ASSOCIACAO DOS LOJISTAS DO MOGI SHOPPING CENTER'),
+    ('ASSOCIACAO PARA O FUNDO DE PROMOCAO E PROPAGANDA DO LONDRINA NORTE SHOPPING'),
+    ('Associação dos Lojistas do Shopping Center Piracicaba'),
+    ('Associação dos Lojistas do Shopping Center Tamboré'),
+    ('Associação dos Lojistas do Shopping Center de Ribeirão Preto'),
+    ('Associação para o Fundo de Promoção e Propaganda do Shopping Granja Vianna'),
+    ('BMP UTILIDADES DOMÉSTICAS S.A'),
+    ('CASTRO MARQUES HOTEIS LTDA'),
+    ('CENTER NORTE S/A CONST.EMPREE. ADM E PARTICIPACAO'),
+    ('CENTER NORTE S/A CONSTR. EMPREE. ADM. E PARTICIPAÇÃO'),
+    ('CONDOMINIO DO PALLADIUM SHOPPING CENTER UMUARAMA'),
+    ('CONDOMINIO SHOPPING CENTER MIDWAY MALL'),
+    ('CONDOMINIO SHOPPING ITAIGARA'),
+    ('CONDOMINIO SHOPPING PELOTAS'),
+    ('CONDOMINIO VARZEA GRANDE SHOPPING'),
+    ('Condominio do Shopping Serra Talhada'),
+    ('EMPORIO SIMPATIA DO VALE'),
+    ('FUNDO DE PROMOCOES COLETIVAS DO SHOPPING DEL REY'),
+    ('FUNDO DE PROMOÇÃO E PROPAGANDA DO SHOPPING CENTER PATIOMIX TEIXEIRA DE FREITAS'),
+    ('HOTEIS CHARMI S/A'),
+    ('Havan Loja de Departamentos S.A'),
+    ('JDK Comercio De Presentes Finos S/A'),
+    ('JULIANA CAVALHIERI CORREA ACESSORIOS - EPP'),
+    ('MEGA MODA PARK'),
+    ('MEGA MODA SHOPPING'),
+    ('Mega Moda Park'),
+    ('OPERADORA DE SHOPPING CENTER LUA NOVA LTDA'),
+    ('PARKCENTER ADMINISTRACAO DE IMOVEIS LTDA'),
+    ('PLAZA AVENIDA SHOPPING'),
+    ('R31 INVESTIMENTOS S.A'),
+    ('Rio Anil Shopping'),
+    ('Roberto de Oliveira Supermercado Ltda'),
+    ('SANTA MARTA DISTRIBUIDORA DE DROGAS LTDA'),
+    ('SHIBATA COMERCIO E ATACADO DE PRODUTOS EM GERAL LTDA'),
+    ('YU COZINHA ORIENTAL COMÉRCIO DE ALIMENTOS LTDA'),
+    -- Resolvidos depois por similaridade >= 0.70, conferidos contra o nome da lista.
+    ('Associação dos Lojistas do Shopping Metro Santa Cruz'),
+    ('BR MALLS ADMINISTRAÇÃO E COMERCIALIZAÇÃO VILA VELHA LTDA'),
+    ('CIRCUITO DE COMPRAS SAO PAULO SPE'),
+    ('Condominio Shopping Center Cerrado'),
+    ('Fundo de Promoção e Propaganda do Shopping Mooca'),
+    ('Fundo de Promoções Coletivas do Partage Norte Shopping Natal'),
+    ('GOLDEN SHOPPING CALHAU'),
+    ('SUPERMERCADO BRUDA LTDA')
+    -- 'EMA ENTRETENIMENTO EIRELLI' ficou de fora de proposito: era o candidato do
+    -- 'Gorilao Park (Boliche)' com similaridade 0.76, mas nao compartilha uma
+    -- palavra sequer com o nome da lista, entao a nota alta era coincidencia.
+    -- Quando alguem confirmar o nome certo, e' so acrescentar a linha aqui.
+ON CONFLICT (cliente) DO NOTHING;
+
+-- =============================================================================
 -- VIEW: v_sem_atualizacao
 -- Clientes que exigem ação, segmentados pelo ciclo real do negócio (contratos
 -- anuais). Medir "meses sem pagamento" não serve: o ciclo de ~12 meses significa
@@ -378,10 +460,14 @@ base AS (
         (pr.inicio_novo_contrato IS NULL
          AND COALESCE(pr.inicio_novo_contrato, b.termino, p.ultimo_vencimento::date, b.inicio) < CURRENT_DATE)
             AS sem_contrato_vigente,
-        COALESCE(cp.ja_pagou, false) AS ja_pagou
+        COALESCE(cp.ja_pagou, false) AS ja_pagou,
+        -- A gestao ja confirmou este cancelamento. Nao ha o que cobrar nem o
+        -- que renegociar: some da lista de acao.
+        cc.cliente IS NOT NULL AS cancelado_confirmado
     FROM contratos_base b
     LEFT JOIN pagamentos p ON p.codigo_contrato = b.codigo
     LEFT JOIN cliente_pagamento cp ON cp.cliente = b.cliente
+    LEFT JOIN clientes_cancelados cc ON cc.cliente = b.cliente
     LEFT JOIN proximo pr ON pr.codigo = b.codigo
     LEFT JOIN ultima_parcela up ON up.codigo_contrato = b.codigo
     LEFT JOIN referencia r ON r.cliente = b.cliente
@@ -399,6 +485,7 @@ SELECT
     encerrado_cedo,
     sem_contrato_vigente,
     ja_pagou,
+    cancelado_confirmado,
     total_parcelas,
     ultimo_pagamento,
     ultimo_vencimento,
@@ -440,20 +527,28 @@ SELECT
          AND b.ultimo_pagamento IS NOT NULL
          AND (CURRENT_DATE - b.ultimo_pagamento) <= 120
             THEN 'cliente_ativo'
-        -- O cliente parou: nao temos contrato em vigor com ele e ele fez
-        -- negocio conosco antes. Ainda esta dentro da carencia de 180 dias,
-        -- entao nao e perda -- e lead. Vem ANTES de "atraso" de proposito: o
-        -- cliente cumpre 30 dias de aviso ao encerrar, e a ultima parcela vence
-        -- dentro dessa janela. Ela nao e inadimplencia, e a prova de que o ciclo
-        -- foi fechado com o pagamento em dia. Sem isto o MD2339 aparecia como
-        -- "vencido" por R$ 454,76 sem nunca ter deixado de pagar nada.
-        -- O limite de 1 parcela e o que segura a regra: o aviso explica UMA
-        -- parcela final, nao tres. Sem ele, 36 clientes com 2 a 4 parcelas em
-        -- aberto -- incluindo R$ 18.372,28 com 87 dias de atraso -- sumiam da
-        -- cobranca e apareciam como lead.
+        -- CONTRATO VENCIDO, AGUARDANDO RENOVACAO: papelada, nao perda. O
+        -- cliente esta operando, mas a renovacao -- que e manual, feita pela
+        -- gestao -- ainda nao saiu. Nao e churn: a gestao confirmou que 91% dos
+        -- cancelamentos reais NAO deixam divida nenhuma, e este cliente esta
+        -- no meio disso. O unico detector de churn que se sustenta e o relogio
+        -- de 180 dias (ciclo_fechado), nao o financeiro.
+        --
+        -- O teto de 1 parcela em aberto e' decisao de COBRANCA, nao de churn: o
+        -- cliente cumpre 30 dias de aviso ao encerrar e a ultima parcela vence
+        -- nessa janela, entao nao e inadimplencia. Sem o teto, 36 clientes com
+        -- 2 a 4 parcelas em aberto -- incluindo R$ 18.372,28 com 87 dias de
+        -- atraso -- deixavam de ser cobranca. O que NAO se sustenta e tratar
+        -- este grupo como "encerrado": ele nao distingue o MD2339, que a gestao
+        -- confirmou como cancelado, dos 13 que continuam ativos.
         WHEN b.sem_contrato_vigente AND b.ja_pagou AND NOT b.ciclo_fechado
          AND b.parcelas_vencidas <= 1
             THEN 'nao_ativo'
+        -- INADIMPLENCIA REAL: dinheiro. Ha parcelas vencidas de verdade --
+        -- duas ou mais, ou uma que nao seja a parcela final do aviso. Este e o
+        -- unico sinal que a lista de cancelamentos da gestao NAO contesta:
+        -- 91% dos cancelamentos reais pagaram tudo em dia e nao deixaram saldo
+        -- nenhum, mas quem tem 2+ parcelas em aberto de fato parou de pagar.
         WHEN b.parcelas_vencidas > 0
             THEN 'atraso'
         -- Cortou o contrato antes do ciclo completar: saiu no meio do prazo,
@@ -466,9 +561,18 @@ SELECT
             THEN 'ciclo_encerrado'
         ELSE 'sem_acao'
     END AS situacao,
-    -- Mesmo teste do CASE de situacao, na MESMA ordem, com numero proprio por
-    -- segmento. Ordenar por prioridade tem de equivaler a ordenar por acao a
-    -- tomar; as duas colunas ja divergiram uma vez por duplicar a regra.
+    -- Um numero por segmento, e o mesmo conjunto de testes do CASE de situacao.
+    -- A ORDEM dos testes aqui e diferente de la, de proposito, e e a unica
+    -- divergencia permitida: "situacao" decide qual balde o cliente cai
+    -- (regra de cobranca -- a parcela final do aviso de 30 dias nao e
+    -- inadimplencia), enquanto "prioridade" so ordena a fila de trabalho
+    -- (dinheiro antes de papelada). Os dois CASE precisam cobrir exatamente os
+    -- mesmos segmentos -- ja divergiram uma vez por duplicar a regra.
+    --
+    -- O teste de nao_ativo vem antes do de atraso porque eles se sobrepoem no
+    -- teste de dinheiro: um nao_ativo tem por definicao 0 ou 1 parcela
+    -- vencida, entao "parcelas_vencidas > 0" sozinho marcaria os dois com a
+    -- mesma prioridade.
     CASE
         WHEN b.status_contrato = 'Ativo' AND b.total_parcelas = 0
          AND (b.inicio IS NULL OR CURRENT_DATE - b.inicio > 90) THEN 6
@@ -478,8 +582,8 @@ SELECT
          AND b.ultimo_pagamento IS NOT NULL
          AND (CURRENT_DATE - b.ultimo_pagamento) <= 120 THEN 0
         WHEN b.sem_contrato_vigente AND b.ja_pagou AND NOT b.ciclo_fechado
-         AND b.parcelas_vencidas <= 1 THEN 1
-        WHEN b.parcelas_vencidas > 0 THEN 2
+         AND b.parcelas_vencidas <= 1 THEN 2
+        WHEN b.parcelas_vencidas > 0 THEN 1
         WHEN b.encerrado_cedo THEN 3
         WHEN b.ciclo_fechado THEN 4
         ELSE 9
