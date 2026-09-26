@@ -17,6 +17,12 @@ Fix production app (Recebimentos/Contratos sections), align local server with pr
   - `sem_faturamento` (prio 4): contrato Ativo que nunca emitiu parcela
   - Cliente com `reassinou_depois` sai da lista (é lead, não caso perdido). Toggle "incluir reativados" para auditoria.
 - View `v_sem_atualizacao` reescrita: colunas `situacao`, `prioridade`, `ciclo_fechado`, `reassinou_depois`, `inicio_novo_contrato`, `fim_contrato`, `dias_sem_contrato`, `dias_atraso`, `parcelas_vencidas`, `valor_vencido`, `valor_referencia`.
+- **`nao_ativo` x `corte_antecipado`: o aviso de 30 dias.** O cliente cumpre 30 dias de aviso ao encerrar, e é nesse intervalo que vence a última parcela. Ela não é inadimplência — é a prova de que o ciclo fechou com o pagamento em dia. O `MD2339` (Condomínio Shopping Center Cerrado) aparecia como "vencido" por R$ 454,76 sem nunca ter deixado de pagar nada.
+  - `nao_ativo` (prio 1): sem contrato em vigor (`sem_contrato_vigente`), pagou conosco (`ja_pagou`), dentro da carência de 180 dias e com **no máximo 1 parcela em aberto**.
+  - `corte_antecipado` (prio 3): saiu no meio do ciclo, `duracao_dias < 330`.
+  - O teto de 1 parcela é o que segura a regra. Sem ele, `nao_ativo` engolia 36 clientes com 2 a 4 parcelas em aberto — incluindo R$ 18.372,28 com 87 dias de atraso — e a cobrança sumia da lista. `atraso` é inadimplência real: 48 clientes, 44 deles com mais de uma parcela vencida.
+  - `situacao` e `prioridade` usam o MESMO `CASE`, na mesma ordem, com um número por segmento. As duas colunas já divergiram uma vez por duplicar a regra; o `CASE` de prioridade está logo abaixo do de `situacao` e precisa ser editado em conjunto.
+- 8 segmentos finais: `cliente_ativo` (0) · `nao_ativo` (1) · `atraso` (2) · `corte_antecipado` (3) · `ciclo_encerrado` (4) · `nunca_pagou` (5) · `sem_faturamento` (6) · `sem_acao` (9).
 - `api/sem-atualizacao.js`: filtro `?dias=` (90/180/365/730) substitui `?meses=`; cards contam sempre os 4 segmentos (navegação) via segunda query; `NULLS LAST` explícito.
 - Removed 6 stray closing braces in `public/js/app.js` that caused SyntaxError (commit `9313651`, deployed).
 - Reverted `DEFAULT_REPO` from `md_extractor` to `md_recebimentos_extractor` in `api/_lib/github.js` (commit `8a17fb0`, deployed).

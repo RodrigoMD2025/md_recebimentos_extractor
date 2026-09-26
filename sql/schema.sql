@@ -311,6 +311,15 @@ proximo AS (
        AND n.inicio > a.inicio
     GROUP BY a.codigo
 ),
+-- O cliente alguma vez pagou uma parcela nossa? Sem isso, "sem contrato em
+-- vigor" nao significa nada: 117 dos 152 clientes em ciclo_encerrado nunca
+-- emitiram uma unica parcela, sao registro de contrato, nao cliente.
+cliente_pagamento AS (
+    SELECT b.cliente, bool_or(p.ultimo_pagamento IS NOT NULL) AS ja_pagou
+    FROM contratos_base b
+    LEFT JOIN pagamentos p ON p.codigo_contrato = b.codigo
+    GROUP BY b.cliente
+),
 base AS (
     SELECT
         b.cliente,
@@ -361,9 +370,18 @@ base AS (
         -- O cliente assinou outro contrato depois deste? Equivale a ter próxima
         -- matrícula: se voltou, já não é caso perdido nem é lead.
         pr.inicio_novo_contrato IS NOT NULL AS reassinou_depois,
-        pr.inicio_novo_contrato AS inicio_novo_contrato
+        pr.inicio_novo_contrato AS inicio_novo_contrato,
+        -- Nao temos contrato em vigor com este cliente: este e o ultimo que ele
+        -- fez e ele ja terminou. Nao basta o contrato ter vencido -- pode ter
+        -- havido renovacao depois, e nesse caso quem tem contrato em vigor e o
+        -- seguinte, nao este.
+        (pr.inicio_novo_contrato IS NULL
+         AND COALESCE(pr.inicio_novo_contrato, b.termino, p.ultimo_vencimento::date, b.inicio) < CURRENT_DATE)
+            AS sem_contrato_vigente,
+        COALESCE(cp.ja_pagou, false) AS ja_pagou
     FROM contratos_base b
     LEFT JOIN pagamentos p ON p.codigo_contrato = b.codigo
+    LEFT JOIN cliente_pagamento cp ON cp.cliente = b.cliente
     LEFT JOIN proximo pr ON pr.codigo = b.codigo
     LEFT JOIN ultima_parcela up ON up.codigo_contrato = b.codigo
     LEFT JOIN referencia r ON r.cliente = b.cliente
@@ -379,6 +397,8 @@ SELECT
     forma_envio,
     duracao_dias,
     encerrado_cedo,
+    sem_contrato_vigente,
+    ja_pagou,
     total_parcelas,
     ultimo_pagamento,
     ultimo_vencimento,
@@ -420,38 +440,53 @@ SELECT
          AND b.ultimo_pagamento IS NOT NULL
          AND (CURRENT_DATE - b.ultimo_pagamento) <= 120
             THEN 'cliente_ativo'
+        -- O cliente parou: nao temos contrato em vigor com ele e ele fez
+        -- negocio conosco antes. Ainda esta dentro da carencia de 180 dias,
+        -- entao nao e perda -- e lead. Vem ANTES de "atraso" de proposito: o
+        -- cliente cumpre 30 dias de aviso ao encerrar, e a ultima parcela vence
+        -- dentro dessa janela. Ela nao e inadimplencia, e a prova de que o ciclo
+        -- foi fechado com o pagamento em dia. Sem isto o MD2339 aparecia como
+        -- "vencido" por R$ 454,76 sem nunca ter deixado de pagar nada.
+        -- O limite de 1 parcela e o que segura a regra: o aviso explica UMA
+        -- parcela final, nao tres. Sem ele, 36 clientes com 2 a 4 parcelas em
+        -- aberto -- incluindo R$ 18.372,28 com 87 dias de atraso -- sumiam da
+        -- cobranca e apareciam como lead.
+        WHEN b.sem_contrato_vigente AND b.ja_pagou AND NOT b.ciclo_fechado
+         AND b.parcelas_vencidas <= 1
+            THEN 'nao_ativo'
         WHEN b.parcelas_vencidas > 0
             THEN 'atraso'
-        -- Cortou o contrato antes do ciclo completar: o cliente nao esta mais
-        -- ativo por decisao propria, nao por decurso de prazo. Diferente do
-        -- ciclo encerrado, em que o contrato cumpriu o prazo e o cliente
-        -- simplesmente nao renovou. Fica depois de "atraso" de proposito: havendo
-        -- parcela vencida a cobrar, a cobranca vem primeiro.
+        -- Cortou o contrato antes do ciclo completar: saiu no meio do prazo,
+        -- por decisao propria e nao por decurso de tempo. Diferente do ciclo
+        -- encerrado, em que o contrato cumpriu o prazo e o cliente simplesmente
+        -- nao renovou.
         WHEN b.encerrado_cedo
-            THEN 'nao_ativo'
+            THEN 'corte_antecipado'
         WHEN b.ciclo_fechado
             THEN 'ciclo_encerrado'
         ELSE 'sem_acao'
     END AS situacao,
+    -- Mesmo teste do CASE de situacao, na MESMA ordem, com numero proprio por
+    -- segmento. Ordenar por prioridade tem de equivaler a ordenar por acao a
+    -- tomar; as duas colunas ja divergiram uma vez por duplicar a regra.
     CASE
         WHEN b.status_contrato = 'Ativo' AND b.total_parcelas = 0
-         AND (b.inicio IS NULL OR CURRENT_DATE - b.inicio > 90) THEN 4
-        WHEN b.status_contrato = 'Ativo' AND b.total_parcelas > 0 AND b.ultimo_pagamento IS NULL THEN 3
+         AND (b.inicio IS NULL OR CURRENT_DATE - b.inicio > 90) THEN 6
+        WHEN b.status_contrato = 'Ativo' AND b.total_parcelas > 0 AND b.ultimo_pagamento IS NULL THEN 5
         WHEN b.status_contrato = 'Ativo'
          AND (b.termino IS NULL OR b.termino >= CURRENT_DATE)
          AND b.ultimo_pagamento IS NOT NULL
          AND (CURRENT_DATE - b.ultimo_pagamento) <= 120 THEN 0
-        WHEN b.parcelas_vencidas > 0 THEN 1
-        WHEN b.encerrado_cedo THEN 2
-        WHEN b.ciclo_fechado THEN 3
-        WHEN b.status_contrato = 'Ativo' AND b.total_parcelas > 0 AND b.ultimo_pagamento IS NULL THEN 4
-        WHEN b.status_contrato = 'Ativo' AND b.total_parcelas = 0
-         AND (b.inicio IS NULL OR CURRENT_DATE - b.inicio > 90) THEN 5
+        WHEN b.sem_contrato_vigente AND b.ja_pagou AND NOT b.ciclo_fechado
+         AND b.parcelas_vencidas <= 1 THEN 1
+        WHEN b.parcelas_vencidas > 0 THEN 2
+        WHEN b.encerrado_cedo THEN 3
+        WHEN b.ciclo_fechado THEN 4
         ELSE 9
     END AS prioridade
 FROM base b;
 
-COMMENT ON VIEW v_sem_atualizacao IS 'Clientes que exigem ação, segmentados pelo ciclo anual: cliente_ativo (dentro do prazo, não exige ação), atraso (cobrança), ciclo_encerrado (renegociação, com carência de 180 dias), nunca_pagou e sem_faturamento. "cliente" falls back to alias_matriz; reassinou_depois marca quem já voltou e por isso sai da lista.';
+COMMENT ON VIEW v_sem_atualizacao IS 'Clientes que exigem ação, segmentados pelo ciclo anual. cliente_ativo: no prazo e pagando, não exige ação (prio 0). nao_ativo: sem contrato em vigor, com histórico de pagamento e dentro da carência de 180 dias — a única parcela em aberto é a final, emitida na janela de aviso de 30 dias, então é lead e não cobrança (prio 1). atraso: inadimplência real, uma ou mais parcelas vencidas (prio 2). corte_antecipado: saiu antes de cumprir o ciclo, menos de 330 dias (prio 3). ciclo_encerrado: cumpriu o ciclo e não renovou, após carência de 180 dias (prio 4). nunca_pagou (prio 5) e sem_faturamento (prio 6). "cliente" falls back to alias_matriz; reassinou_depois marca quem já voltou e por isso sai da lista.';
 -- =============================================================================
 -- Tabela de relatórios de extração de contratos (para o monitor do dashboard)
 -- =============================================================================

@@ -3004,7 +3004,8 @@ const ROTULO_SEGMENTO = {
   nunca_pagou: "nunca pagou",
   sem_faturamento: "contrato sem faturamento",
   cliente_ativo: "cliente ativo (no prazo, pagando)",
-  nao_ativo: "cliente não ativo (cortou o ciclo)",
+  nao_ativo: "cliente não ativo (sem contrato em vigor)",
+  corte_antecipado: "cortou o ciclo antes do prazo",
 };
 
 function rotuloFiltroAtualizacao() {
@@ -3028,7 +3029,9 @@ function renderCardsAtualizacao(resumo) {
   setTxt("atual-valor-vencido", fmtMoeda(resumo.valor_vencido));
   setTxt("atual-atraso-info", `${resumo.clientes_atraso || 0} clientes · ${resumo.parcelas_vencidas || 0} parcelas vencidas`);
   setTxt("atual-clientes-nao-ativos", resumo.clientes_nao_ativos);
-  setTxt("atual-nao-ativo-info", "encerraram antes do ciclo");
+  setTxt("atual-nao-ativo-info", "sem contrato em vigor, na carência");
+  setTxt("atual-clientes-corte-antecipado", resumo.clientes_corte_antecipado);
+  setTxt("atual-corte-antecipado-info", "saíram antes do prazo");
   setTxt("atual-clientes-ciclo", resumo.clientes_ciclo_encerrado);
   setTxt("atual-ciclo-info", "ciclo terminou, sem contrato novo");
   setTxt("atual-clientes-nunca", resumo.clientes_nunca_pagou);
@@ -3039,6 +3042,7 @@ function renderCardsAtualizacao(resumo) {
   // Destaca o card do segmento selecionado
   const sel = getVal("filtro-atual-situacao");
   for (const [id, seg] of [["card-atraso", "atraso"], ["card-nao-ativo", "nao_ativo"],
+                           ["card-corte-antecipado", "corte_antecipado"],
                            ["card-ciclo", "ciclo_encerrado"],
                            ["card-nunca", "nunca_pagou"], ["card-sem-fat", "sem_faturamento"]]) {
     document.getElementById(id)?.classList.toggle("ring-2", sel === seg);
@@ -3052,6 +3056,7 @@ const BADGE_SEGMENTO = {
   sem_faturamento: ["badge-neutral", "sem faturamento"],
   cliente_ativo: ["badge-info", "cliente ativo"],
   nao_ativo: ["badge-neutral", "não ativo"],
+  corte_antecipado: ["badge-cancelled", "cortou o ciclo"],
 };
 
 function renderLinhaAtualizacao(r) {
