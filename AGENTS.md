@@ -71,6 +71,13 @@ Fix production app (Recebimentos/Contratos sections), align local server with pr
 - **Filtro contratante** agora lê o valor do `<input>` ao clicar "Filtrar" (antes só lia após `limparFiltrosContratos()`).
 - **Bar chart click filter** (`?mes=MM/YYYY`) implementado — clicar na barra filtra a tabela pelo mês.
 
+## A base nao e um retrato vivo da fonte (achado de 26/09)
+- O extrator le **30 registros por execucao** (`pages=1` nas 11 execucoes, 3 inserts em 2 meses). Os 2345 contratos vieram de um carregamento em massa em **24/07/2026**; desde entao entraram 2. "Nao existe contrato novo" so e fato ate 24/07.
+- `base_ref` deriva a data de referencia (dia com mais inserts) em vez de fixar, e `dado_desatualizado_possivel` marca onde a view AFIRMA ausencia: contrato **ja terminado** depois da carga e sem sucessao. Exige `termino < CURRENT_DATE` alem de `> base_referencia` — sem isso o flag dispara em todo cliente ativo (contrato com termino em 2027 tem vigencia, nao lacuna). Hoje sao 28 clientes.
+- Isso NAO invalida a tese churn=180 dias: os cancelamentos confirmados sairam entre 2020 e 2025, muito antes do corte. Invalida apenas usar "sem contrato vigente" como fato presente.
+- **Nao medir durante uma extracao.** Uma medicao feita por volta das 20:00 de 26/09 pegou o lote de `recebimentos` pela metade: `atraso` appeared 45 em vez de 52 e `nao_ativo` 13 em vez de 12, porque alguns contratos ja tinham o `recebimentos` novo e outros nao. Total 518 nos dois casos. Estado estavel: 51/12/9/140 clientes em atraso/renovacao/corte/ciclo.
+- 24/07 e' tambem a origem do confundidor `status='Ativo'`: o sistema de origem marca Ativo ate o ultimo dia do ciclo, entao 2347 contratos, e nao 2121, estao Ativo na fonte.
+
 ## Recent Testing
 Basic contratos: 2345 total
 mes=07/2026: 14 contratos ending July 2026

@@ -576,6 +576,11 @@
           </button>
         </div>
 
+        <!-- Honestidade sobre o que a base sabe: a última carga completa é de
+             24/07/2026 e o extrator incremental só lê 30 registros por execução,
+             então "não existe contrato novo" é afirmação só até essa data. -->
+        <p id="atual-base-aviso" class="hidden text-xs text-amber-700 dark:text-amber-400 mb-3"></p>
+
         <!-- Filtros -->
         <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 px-4 py-3 mb-5">
           <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
@@ -702,6 +707,6 @@
     <div style="font-weight:600; margin-bottom:4px;">Debug (visível)</div>
     <div id="debug-log" style="max-height:120px; overflow:auto; line-height:1.2; opacity:0.95;">Aguardando eventos...</div>
   </div>
-  <script src="js/app.js?v=13"></script>
+  <script src="js/app.js?v=14"></script>
 </body>
 </html>
