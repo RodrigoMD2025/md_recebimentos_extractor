@@ -194,8 +194,13 @@ COMMENT ON VIEW v_contratos_por_mes IS 'Contratos ativos vencendo por mês.';
 --   4. atraso           Tem parcela com vencimento já passado e não paga FORA do
 --                      prazo do contrato, ou sem pagar há mais de 120 dias.
 --                      É a lista de cobrança de verdade.
---   5. ciclo_encerrado  O ciclo terminou e o cliente não assinou outro contrato.
---                      É o pipeline de renegociação.
+--   5. ciclo_encerrado  O ciclo terminou HA MAIS DE 6 MESES e o cliente não
+--                      assinou outro contrato. É o pipeline de renegociação.
+--
+-- A carência de 180 dias é o ponto central: 74 renovações (3,1% do total)
+-- acontecem entre 91 e 180 dias depois do fim do contrato anterior. Um
+-- contrato que venceu há 4 meses ainda é lead em carência, não churn — o
+-- cliente não cancelou, só ainda não renovou.
 --
 -- Cliente que já assinou contrato depois (reassinou_depois) sai da lista: ele
 -- voltou, não é caso perdido nem é lead.
@@ -293,6 +298,19 @@ referencia AS (
     JOIN ultima_parcela u ON u.codigo_contrato = b.codigo
     GROUP BY b.cliente
 ),
+-- Próxima matrícula do mesmo cliente: o contrato que veio depois deste. Fica
+-- numa CTE (e não como subquery na lista de colunas) porque tanto
+-- reassinou_depois quanto o fim do ciclo precisam dela.
+proximo AS (
+    SELECT a.codigo, min(n.inicio) AS inicio_novo_contrato
+    FROM contratos_base a
+    LEFT JOIN contratos_base n
+        ON n.cliente = a.cliente
+       AND a.inicio IS NOT NULL
+       AND n.inicio IS NOT NULL
+       AND n.inicio > a.inicio
+    GROUP BY a.codigo
+),
 base AS (
     SELECT
         b.cliente,
@@ -315,26 +333,25 @@ base AS (
         COALESCE(p.parcelas_vencidas, 0) AS parcelas_vencidas,
         COALESCE(p.valor_vencido, 0) AS valor_vencido,
         p.vencida_mais_antiga,
-        -- O ciclo fecha quando o contrato vence ou, na falta da data, quando a
-        -- última cobrança emitida expira.
-        (b.termino IS NOT NULL AND b.termino < CURRENT_DATE) OR b.status = 'Inativo'
+        -- O ciclo NÃO fecha no vencimento do contrato. Leva 6 meses de carência:
+        -- 74 renovações (3,1% do total) acontecem entre 91 e 180 dias após o fim
+        -- do contrato anterior, então "o contrato venceu" não é "o cliente
+        -- perdeu" — durante a carência ele ainda é lead, não churn. Passados os
+        -- 180 dias sem novo contrato, aí sim entra na lista de renegociação.
+        -- Na falta da data de término, o ciclo fecha quando a última cobrança
+        -- emitida expira (ou, se nunca emitiu nada, 180 dias após o início).
+        COALESCE(pr.inicio_novo_contrato, b.termino, p.ultimo_vencimento::date, b.inicio)
+            IS NOT NULL
+        AND COALESCE(pr.inicio_novo_contrato, b.termino, p.ultimo_vencimento::date, b.inicio)
+            <= CURRENT_DATE - INTERVAL '6 months'
             AS ciclo_fechado,
-        -- O cliente assinou outro contrato depois deste?
-        EXISTS (
-            SELECT 1 FROM contratos_base n
-            WHERE n.cliente = b.cliente
-              AND b.inicio IS NOT NULL
-              AND n.inicio IS NOT NULL
-              AND n.inicio > b.inicio
-        ) AS reassinou_depois,
-        (SELECT min(n.inicio) FROM contratos_base n
-         WHERE n.cliente = b.cliente
-           AND b.inicio IS NOT NULL
-           AND n.inicio IS NOT NULL
-           AND n.inicio > b.inicio
-        ) AS inicio_novo_contrato
+        -- O cliente assinou outro contrato depois deste? Equivale a ter próxima
+        -- matrícula: se voltou, já não é caso perdido nem é lead.
+        pr.inicio_novo_contrato IS NOT NULL AS reassinou_depois,
+        pr.inicio_novo_contrato AS inicio_novo_contrato
     FROM contratos_base b
     LEFT JOIN pagamentos p ON p.codigo_contrato = b.codigo
+    LEFT JOIN proximo pr ON pr.codigo = b.codigo
     LEFT JOIN ultima_parcela up ON up.codigo_contrato = b.codigo
     LEFT JOIN referencia r ON r.cliente = b.cliente
 )
@@ -408,7 +425,7 @@ SELECT
     END AS prioridade
 FROM base b;
 
-COMMENT ON VIEW v_sem_atualizacao IS 'Clientes que exigem ação, segmentados pelo ciclo anual: cliente_ativo (dentro do prazo, não exige ação), atraso (cobrança), ciclo_encerrado (renegociação), nunca_pagou e sem_faturamento. "cliente" falls back to alias_matriz; reassinou_depois marca quem já voltou e por isso sai da lista.';
+COMMENT ON VIEW v_sem_atualizacao IS 'Clientes que exigem ação, segmentados pelo ciclo anual: cliente_ativo (dentro do prazo, não exige ação), atraso (cobrança), ciclo_encerrado (renegociação, com carência de 180 dias), nunca_pagou e sem_faturamento. "cliente" falls back to alias_matriz; reassinou_depois marca quem já voltou e por isso sai da lista.';
 -- =============================================================================
 -- Tabela de relatórios de extração de contratos (para o monitor do dashboard)
 -- =============================================================================
