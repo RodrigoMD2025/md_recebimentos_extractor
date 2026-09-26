@@ -308,6 +308,23 @@ WITH contratos_base AS (
              THEN TO_DATE(c.data_termino, 'DD/MM/YYYY') END AS termino
     FROM contratos c
 ),
+base_ref AS (
+    -- Ate onde a base conhece a fonte. A base NaO e um retrato vivo: o extrator
+    -- le 30 registros por execucao (pages=1 nas 11 execucoes, 3 inserts em 2
+    -- meses), entao o que existe aqui e o carregamento em massa mais duas
+    -- goteiras. A referencia e o dia com mais inserts - 24/07/2026, com 2345.
+    --
+    -- Isso importa porque "nao existe contrato novo" so e fato ate essa data.
+    -- Um contrato que termina depois dela pode ter sucessao na fonte que nunca
+    -- entrou aqui, e ai "sem contrato vigente" vira ausencia de evidencia, nao
+    -- evidencia de ausencia. Derivar a data em vez de fixar faz a view
+    -- acompanhar sozinha uma carga completa futura.
+    SELECT MAX(criado_em)::date AS data
+    FROM contratos
+    GROUP BY criado_em::date
+    ORDER BY count(*) DESC
+    LIMIT 1
+),
 pagamentos AS (
     SELECT
         codigo_contrato,
@@ -463,8 +480,20 @@ base AS (
         COALESCE(cp.ja_pagou, false) AS ja_pagou,
         -- A gestao ja confirmou este cancelamento. Nao ha o que cobrar nem o
         -- que renegociar: some da lista de acao.
-        cc.cliente IS NOT NULL AS cancelado_confirmado
+        cc.cliente IS NOT NULL AS cancelado_confirmado,
+        br.data AS base_referencia,
+        -- Aqui a view AFIRMA que nao existe contrato em vigor. Essa afirmacao
+        -- so vale ate a data da ultima carga: se o contrato terminou depois
+        -- dela, a sucessao pode existir na fonte e nunca ter sido extraida.
+        -- So faz sentido onde ha ausencia: exige contrato JA TERMINADO e sem
+        -- sucessao. Contrato em vigor tem vigencia, e vigencia e' o que temos,
+        -- nao lacuna -- sem isso o flag dispara em todo cliente ativo.
+        (pr.inicio_novo_contrato IS NULL
+         AND b.termino IS NOT NULL
+         AND b.termino < CURRENT_DATE
+         AND b.termino > br.data) AS dado_desatualizado_possivel
     FROM contratos_base b
+    CROSS JOIN base_ref br
     LEFT JOIN pagamentos p ON p.codigo_contrato = b.codigo
     LEFT JOIN cliente_pagamento cp ON cp.cliente = b.cliente
     LEFT JOIN clientes_cancelados cc ON cc.cliente = b.cliente
@@ -486,6 +515,8 @@ SELECT
     sem_contrato_vigente,
     ja_pagou,
     cancelado_confirmado,
+    base_referencia,
+    dado_desatualizado_possivel,
     total_parcelas,
     ultimo_pagamento,
     ultimo_vencimento,

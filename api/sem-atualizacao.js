@@ -64,6 +64,8 @@ const SELECT_FIELDS = [
   "prioridade",
   "duracao_dias",
   "cancelado_confirmado",
+  "to_char(base_referencia, 'DD/MM/YYYY') AS base_referencia",
+  "dado_desatualizado_possivel",
 ].join(", ");
 
 const RESUMO_FIELDS = `
@@ -79,7 +81,9 @@ const RESUMO_FIELDS = `
   COALESCE(SUM(valor_em_aberto), 0) AS valor_aberto,
   COALESCE(SUM(parcelas_vencidas), 0) AS parcelas_vencidas,
   COALESCE(SUM(valor_vencido), 0) AS valor_vencido,
-  COALESCE(SUM(valor_referencia), 0) AS valor_referencia
+  COALESCE(SUM(valor_referencia), 0) AS valor_referencia,
+  to_char(MAX(base_referencia), 'DD/MM/YYYY') AS base_referencia,
+  COUNT(DISTINCT cliente) FILTER (WHERE dado_desatualizado_possivel) AS clientes_base_desatualizada
 `;
 
 const VIEW = "v_sem_atualizacao";

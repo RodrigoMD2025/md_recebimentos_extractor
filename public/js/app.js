@@ -3039,6 +3039,23 @@ function renderCardsAtualizacao(resumo) {
   setTxt("atual-clientes-sem-faturamento", resumo.clientes_sem_faturamento);
   setTxt("atual-sem-faturamento-info", "ativos que nunca geraram cobrança");
 
+  // A base so conhece a fonte ate a ultima carga completa. Dizer isso e' o que
+  // separa "o cliente saiu" de "nos ainda nao vimos a renovacao": sem isso o
+  // app afirma uma coisa que o dado nao sustenta.
+  const baseRef = resumo.base_referencia;
+  const cegas = resumo.clientes_base_desatualizada || 0;
+  const elBase = document.getElementById("atual-base-aviso");
+  if (elBase) {
+    elBase.textContent = baseRef
+      ? `Base atualizada até ${esc(baseRef)}${
+          cegas
+            ? ` · ${cegas} cliente(s) com contrato encerrado depois disso podem ter renovação não extraída`
+            : ""
+        }`
+      : "";
+    elBase.classList.toggle("hidden", !baseRef);
+  }
+
   // Destaca o card do segmento selecionado
   const sel = getVal("filtro-atual-situacao");
   for (const [id, seg] of [["card-atraso", "atraso"], ["card-nao-ativo", "nao_ativo"],
@@ -3058,6 +3075,15 @@ const BADGE_SEGMENTO = {
   nao_ativo: ["badge-info", "renovação pendente"],
   corte_antecipado: ["badge-cancelled", "cortou o ciclo"],
 };
+
+// `base_referencia` chega como 'DD/MM/YYYY' quando a consulta usa to_char e como
+// ISO/Date quando usa SELECT *. Normaliza os dois formatos.
+function fmtDataRefBase(v) {
+  if (!v) return "";
+  const s = String(v);
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : s;
+}
 
 function renderLinhaAtualizacao(r) {
   const [classe, texto] = BADGE_SEGMENTO[r.situacao] || ["badge-neutral", r.situacao];
@@ -3083,9 +3109,20 @@ function renderLinhaAtualizacao(r) {
       })</span>`
     : "";
 
+  // A base nao e um retrato vivo da fonte: o extrator le 30 registros por
+  // execucao, entao o que existe aqui e a carga de 24/07 mais duas goteiras.
+  // Quando o contrato terminou DEPOIS dessa data e nao achamos sucessao, a
+  // conclusao "sem contrato vigente" descansa numa evidencia anterior a lacuna.
+  // A renovacao pode existir na fonte e ainda nao ter sido extraida.
+  const tagBaseCega = r.dado_desatualizado_possivel
+    ? `<span class="text-[10px] text-amber-600 dark:text-amber-400" title="Este contrato terminou depois da ultima carga completa (${
+        esc(fmtDataRefBase(r.base_referencia))
+      }). A renovacao pode existir no sistema e ainda nao ter sido extraida — confirme antes de agir."> ⚠ base desatualizada</span>`
+    : "";
+
   return `
     <tr>
-      <td class="px-5 py-3">${esc(r.cliente)}${tagVoltou}</td>
+      <td class="px-5 py-3">${esc(r.cliente)}${tagVoltou}${tagBaseCega}</td>
       <td class="px-5 py-3 font-mono text-xs font-semibold">${esc(r.codigo)}</td>
       <td class="px-5 py-3"><span class="badge ${classe}">${texto}</span></td>
       <td class="px-5 py-3 text-xs">${
