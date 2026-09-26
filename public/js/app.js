@@ -3004,6 +3004,7 @@ const ROTULO_SEGMENTO = {
   nunca_pagou: "nunca pagou",
   sem_faturamento: "contrato sem faturamento",
   cliente_ativo: "cliente ativo (no prazo, pagando)",
+  nao_ativo: "cliente não ativo (cortou o ciclo)",
 };
 
 function rotuloFiltroAtualizacao() {
@@ -3026,6 +3027,8 @@ function atualizarRotuloAtualizacao() {
 function renderCardsAtualizacao(resumo) {
   setTxt("atual-valor-vencido", fmtMoeda(resumo.valor_vencido));
   setTxt("atual-atraso-info", `${resumo.clientes_atraso || 0} clientes · ${resumo.parcelas_vencidas || 0} parcelas vencidas`);
+  setTxt("atual-clientes-nao-ativos", resumo.clientes_nao_ativos);
+  setTxt("atual-nao-ativo-info", "encerraram antes do ciclo");
   setTxt("atual-clientes-ciclo", resumo.clientes_ciclo_encerrado);
   setTxt("atual-ciclo-info", "ciclo terminou, sem contrato novo");
   setTxt("atual-clientes-nunca", resumo.clientes_nunca_pagou);
@@ -3035,7 +3038,8 @@ function renderCardsAtualizacao(resumo) {
 
   // Destaca o card do segmento selecionado
   const sel = getVal("filtro-atual-situacao");
-  for (const [id, seg] of [["card-atraso", "atraso"], ["card-ciclo", "ciclo_encerrado"],
+  for (const [id, seg] of [["card-atraso", "atraso"], ["card-nao-ativo", "nao_ativo"],
+                           ["card-ciclo", "ciclo_encerrado"],
                            ["card-nunca", "nunca_pagou"], ["card-sem-fat", "sem_faturamento"]]) {
     document.getElementById(id)?.classList.toggle("ring-2", sel === seg);
   }
@@ -3047,6 +3051,7 @@ const BADGE_SEGMENTO = {
   nunca_pagou: ["badge-failure", "nunca pagou"],
   sem_faturamento: ["badge-neutral", "sem faturamento"],
   cliente_ativo: ["badge-info", "cliente ativo"],
+  nao_ativo: ["badge-neutral", "não ativo"],
 };
 
 function renderLinhaAtualizacao(r) {
@@ -3078,6 +3083,13 @@ function renderLinhaAtualizacao(r) {
       <td class="px-5 py-3">${esc(r.cliente)}${tagVoltou}</td>
       <td class="px-5 py-3 font-mono text-xs font-semibold">${esc(r.codigo)}</td>
       <td class="px-5 py-3"><span class="badge ${classe}">${texto}</span></td>
+      <td class="px-5 py-3 text-xs">${
+        r.duracao_dias === null || r.duracao_dias === undefined
+          ? `<span class="text-gray-400">—</span>`
+          : `<span class="${r.encerrado_cedo ? "font-semibold text-rose-600" : ""}">${r.duracao_dias}d${
+              r.encerrado_cedo ? " ⚠" : ""
+            }</span>`
+      }</td>
       <td class="px-5 py-3 text-xs">${atraso}</td>
       <td class="px-5 py-3 text-xs">${paradoCelula}</td>
       <td class="px-5 py-3 text-xs">${esc(fmtDataIso(r.ultimo_pagamento))}</td>
@@ -3209,6 +3221,8 @@ function linhaExportAtualizacao(r) {
     "Início": r.data_inicio,
     "Término": r.data_termino,
     "Fim do ciclo": r.fim_contrato ? fmtDataIso(r.fim_contrato) : "",
+    "Duração (dias)": r.duracao_dias ?? "",
+    "Encerrou antes do ciclo": r.encerrado_cedo ? "Sim" : "Não",
     "Dias de atraso": r.dias_atraso ?? "",
     "Parado há (dias)": r.dias_sem_contrato ?? "",
     "Último pagamento": r.ultimo_pagamento ? fmtDataIso(r.ultimo_pagamento) : "",

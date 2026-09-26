@@ -323,6 +323,19 @@ base AS (
         b.forma_envio,
         b.inicio,
         b.termino,
+        -- Quanto o contrato realmente durou. 93% da base fecha entre 363 e 366
+        -- dias, entao o ciclo nominal e de 12 meses.
+        CASE WHEN b.inicio IS NOT NULL AND b.termino IS NOT NULL
+             THEN (b.termino - b.inicio) END AS duracao_dias,
+        -- Encerrou ANTES do ciclo completar. Nao ha campo de duracao prevista
+        -- (forma_envio e "Nao definido" em 2346 de 2347 registros), entao o
+        -- corte e o proprio ciclo nominal: menos de 330 dias, com folga para
+        -- nao capturar a faixa de transicao de 332-361 dias. So conta se o
+        -- contrato ja terminou -- um contrato de 6 meses que ainda esta dentro
+        -- do prazo nao foi encerrado cedo, esta em andamento.
+        (b.inicio IS NOT NULL AND b.termino IS NOT NULL
+         AND b.termino < CURRENT_DATE
+         AND (b.termino - b.inicio) < 330) AS encerrado_cedo,
         COALESCE(p.total_parcelas, 0) AS total_parcelas,
         p.ultimo_pagamento,
         p.ultimo_vencimento,
@@ -364,6 +377,8 @@ SELECT
     data_inicio,
     data_termino,
     forma_envio,
+    duracao_dias,
+    encerrado_cedo,
     total_parcelas,
     ultimo_pagamento,
     ultimo_vencimento,
@@ -407,6 +422,13 @@ SELECT
             THEN 'cliente_ativo'
         WHEN b.parcelas_vencidas > 0
             THEN 'atraso'
+        -- Cortou o contrato antes do ciclo completar: o cliente nao esta mais
+        -- ativo por decisao propria, nao por decurso de prazo. Diferente do
+        -- ciclo encerrado, em que o contrato cumpriu o prazo e o cliente
+        -- simplesmente nao renovou. Fica depois de "atraso" de proposito: havendo
+        -- parcela vencida a cobrar, a cobranca vem primeiro.
+        WHEN b.encerrado_cedo
+            THEN 'nao_ativo'
         WHEN b.ciclo_fechado
             THEN 'ciclo_encerrado'
         ELSE 'sem_acao'
@@ -420,7 +442,11 @@ SELECT
          AND b.ultimo_pagamento IS NOT NULL
          AND (CURRENT_DATE - b.ultimo_pagamento) <= 120 THEN 0
         WHEN b.parcelas_vencidas > 0 THEN 1
-        WHEN b.ciclo_fechado THEN 2
+        WHEN b.encerrado_cedo THEN 2
+        WHEN b.ciclo_fechado THEN 3
+        WHEN b.status_contrato = 'Ativo' AND b.total_parcelas > 0 AND b.ultimo_pagamento IS NULL THEN 4
+        WHEN b.status_contrato = 'Ativo' AND b.total_parcelas = 0
+         AND (b.inicio IS NULL OR CURRENT_DATE - b.inicio > 90) THEN 5
         ELSE 9
     END AS prioridade
 FROM base b;

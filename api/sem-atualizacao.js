@@ -26,6 +26,7 @@ const SITUACOES = new Set([
   "nunca_pagou",
   "sem_faturamento",
   "cliente_ativo",
+  "nao_ativo",
 ]);
 
 // Janelas de tempo: "parado há mais de N dias" (o ciclo é anual, então a
@@ -41,6 +42,8 @@ const SELECT_FIELDS = [
   "data_inicio",
   "data_termino",
   "forma_envio",
+  "duracao_dias",
+  "encerrado_cedo",
   "total_parcelas",
   "ultimo_pagamento",
   "ultimo_vencimento",
@@ -58,12 +61,14 @@ const SELECT_FIELDS = [
   "dias_atraso",
   "situacao",
   "prioridade",
+  "duracao_dias",
 ].join(", ");
 
 const RESUMO_FIELDS = `
   COUNT(DISTINCT cliente) AS clientes,
   COUNT(*) AS contratos,
   COUNT(DISTINCT cliente) FILTER (WHERE situacao = 'atraso') AS clientes_atraso,
+  COUNT(DISTINCT cliente) FILTER (WHERE situacao = 'nao_ativo') AS clientes_nao_ativos,
   COUNT(DISTINCT cliente) FILTER (WHERE situacao = 'ciclo_encerrado') AS clientes_ciclo_encerrado,
   COUNT(DISTINCT cliente) FILTER (WHERE situacao = 'nunca_pagou') AS clientes_nunca_pagou,
   COUNT(DISTINCT cliente) FILTER (WHERE situacao = 'sem_faturamento') AS clientes_sem_faturamento,
@@ -149,12 +154,12 @@ module.exports = async function handler(req, res) {
   if (situacao === "todos") {
     if (incluirAtivos) {
       conditions.push(
-        `(situacao IN ('atraso','ciclo_encerrado','nunca_pagou','sem_faturamento')` +
+        `(situacao IN ('atraso','nao_ativo','ciclo_encerrado','nunca_pagou','sem_faturamento')` +
         ` OR situacao = 'cliente_ativo')`
       );
     } else {
       conditions.push(
-        `situacao IN ('atraso','ciclo_encerrado','nunca_pagou','sem_faturamento')`
+        `situacao IN ('atraso','nao_ativo','ciclo_encerrado','nunca_pagou','sem_faturamento')`
       );
     }
   } else {
@@ -168,7 +173,7 @@ module.exports = async function handler(req, res) {
   if (dias > 0) {
     params.push(dias);
     conditions.push(
-      `(situacao NOT IN ('ciclo_encerrado','sem_faturamento')` +
+      `(situacao NOT IN ('nao_ativo','ciclo_encerrado','sem_faturamento')` +
       ` OR (dias_sem_contrato IS NOT NULL AND dias_sem_contrato >= $${params.length}))`
     );
   }
@@ -195,20 +200,20 @@ module.exports = async function handler(req, res) {
   // para onde dá para ir. Só a janela de tempo e o toggle de reativados pesam.
   const cardConditions = [];
   const cardParams = [];
-  // "Parado ha" so faz sentido para ciclo encerrado e contrato sem
-  // faturamento. Atraso e nunca-pagou sao cobranca de contrato vigente e nao
-  // devem sumir da lista quando o filtro de tempo aumenta.
+  // "Parado ha" so faz sentido para cliente nao ativo, ciclo encerrado e contrato
+  // sem faturamento. Atraso e nunca-pagou sao cobranca de contrato vigente e
+  // nao devem sumir da lista quando o filtro de tempo aumenta.
   if (dias > 0) {
-    params.push(dias);
+    cardParams.push(dias);
     cardConditions.push(
-      `(situacao NOT IN ('ciclo_encerrado','sem_faturamento')` +
+      `(situacao NOT IN ('nao_ativo','ciclo_encerrado','sem_faturamento')` +
       ` OR (dias_sem_contrato IS NOT NULL AND dias_sem_contrato >= $${cardParams.length}))`
     );
   }
   if (!incluirReativados) {
     cardConditions.push(`NOT reassinou_depois`);
   }
-  const cardWhere = `WHERE situacao IN ('atraso','ciclo_encerrado','nunca_pagou','sem_faturamento')${
+  const cardWhere = `WHERE situacao IN ('atraso','nao_ativo','ciclo_encerrado','nunca_pagou','sem_faturamento')${
     cardConditions.length ? " AND " + cardConditions.join(" AND ") : ""
   }`;
 
@@ -259,6 +264,7 @@ module.exports = async function handler(req, res) {
         contratos: Number(resumo.contratos) || 0,
         // Navegacao: sempre os quatro segmentos,independentemente do filtro aplicado.
         clientes_atraso: Number(cards.clientes_atraso) || 0,
+        clientes_nao_ativos: Number(cards.clientes_nao_ativos) || 0,
         clientes_ciclo_encerrado: Number(cards.clientes_ciclo_encerrado) || 0,
         clientes_nunca_pagou: Number(cards.clientes_nunca_pagou) || 0,
         clientes_sem_faturamento: Number(cards.clientes_sem_faturamento) || 0,

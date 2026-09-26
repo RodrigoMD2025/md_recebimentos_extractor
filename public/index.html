@@ -537,28 +537,34 @@
         </div>
 
         <!-- Cards por segmento (clicáveis: filtram a tabela) -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-5">
           <button onclick="filtrarPorSituacaoAtualizacao('atraso')" id="card-atraso"
                   class="text-left bg-white dark:bg-gray-900 rounded-xl border border-red-200 dark:border-red-900 p-4 hover:ring-2 hover:ring-red-400 transition">
             <p class="text-xs text-gray-500 mb-1">1 · Vencido (cobrança)</p>
             <p id="atual-valor-vencido" class="text-2xl font-bold text-red-600">--</p>
             <p id="atual-atraso-info" class="text-xs text-gray-400 mt-1">-- clientes · -- parcelas</p>
           </button>
+          <button onclick="filtrarPorSituacaoAtualizacao('nao_ativo')" id="card-nao-ativo"
+                  class="text-left bg-white dark:bg-gray-900 rounded-xl border border-rose-200 dark:border-rose-900 p-4 hover:ring-2 hover:ring-rose-400 transition">
+            <p class="text-xs text-gray-500 mb-1">2 · Cliente não ativo</p>
+            <p id="atual-clientes-nao-ativos" class="text-2xl font-bold text-rose-600">--</p>
+            <p id="atual-nao-ativo-info" class="text-xs text-gray-400 mt-1">-- cortaram antes do ciclo</p>
+          </button>
           <button onclick="filtrarPorSituacaoAtualizacao('ciclo_encerrado')" id="card-ciclo"
                   class="text-left bg-white dark:bg-gray-900 rounded-xl border border-amber-200 dark:border-amber-900 p-4 hover:ring-2 hover:ring-amber-400 transition">
-            <p class="text-xs text-gray-500 mb-1">2 · Ciclo encerrado (renegociar)</p>
+            <p class="text-xs text-gray-500 mb-1">3 · Ciclo encerrado (renegociar)</p>
             <p id="atual-clientes-ciclo" class="text-2xl font-bold text-amber-600">--</p>
             <p id="atual-ciclo-info" class="text-xs text-gray-400 mt-1">-- sem contrato novo</p>
           </button>
           <button onclick="filtrarPorSituacaoAtualizacao('nunca_pagou')" id="card-nunca"
                   class="text-left bg-white dark:bg-gray-900 rounded-xl border border-purple-200 dark:border-purple-900 p-4 hover:ring-2 hover:ring-purple-400 transition">
-            <p class="text-xs text-gray-500 mb-1">3 · Nunca pagou</p>
+            <p class="text-xs text-gray-500 mb-1">4 · Nunca pagou</p>
             <p id="atual-clientes-nunca" class="text-2xl font-bold text-purple-600">--</p>
             <p id="atual-nunca-info" class="text-xs text-gray-400 mt-1">-- com cobranças emitidas</p>
           </button>
           <button onclick="filtrarPorSituacaoAtualizacao('sem_faturamento')" id="card-sem-fat"
                   class="text-left bg-white dark:bg-gray-900 rounded-xl border border-gray-300 dark:border-gray-700 p-4 hover:ring-2 hover:ring-gray-400 transition">
-            <p class="text-xs text-gray-500 mb-1">4 · Contrato sem faturamento</p>
+            <p class="text-xs text-gray-500 mb-1">5 · Contrato sem faturamento</p>
             <p id="atual-clientes-sem-faturamento" class="text-2xl font-bold text-gray-600 dark:text-gray-300">--</p>
             <p id="atual-sem-faturamento-info" class="text-xs text-gray-400 mt-1">-- ativos que nunca geraram cobrança</p>
           </button>
@@ -582,6 +588,7 @@
               <select id="filtro-atual-situacao" class="input-field text-sm">
                 <option value="todos" selected>Todos</option>
                 <option value="atraso">Vencido (cobrança)</option>
+                <option value="nao_ativo">Cliente não ativo (cortou o ciclo)</option>
                 <option value="ciclo_encerrado">Ciclo encerrado (renegociar)</option>
                 <option value="nunca_pagou">Nunca pagou</option>
                 <option value="sem_faturamento">Contrato sem faturamento</option>
@@ -630,6 +637,7 @@
                   <th class="px-5 py-3 cursor-pointer select-none" onclick="ordenarAtualizacao('cliente')">Cliente</th>
                   <th class="px-5 py-3">Contrato</th>
                   <th class="px-5 py-3">Segmento</th>
+                  <th class="px-5 py-3 cursor-pointer select-none" onclick="ordenarAtualizacao('duracao_dias')">Duração</th>
                   <th class="px-5 py-3 cursor-pointer select-none" onclick="ordenarAtualizacao('dias_atraso')">Dias de atraso</th>
                   <th class="px-5 py-3 cursor-pointer select-none" onclick="ordenarAtualizacao('dias_sem_contrato')">Parado há</th>
                   <th class="px-5 py-3 cursor-pointer select-none" onclick="ordenarAtualizacao('ultimo_pagamento')">Último pagamento</th>
@@ -687,6 +695,6 @@
     <div style="font-weight:600; margin-bottom:4px;">Debug (visível)</div>
     <div id="debug-log" style="max-height:120px; overflow:auto; line-height:1.2; opacity:0.95;">Aguardando eventos...</div>
   </div>
-  <script src="js/app.js?v=10"></script>
+  <script src="js/app.js?v=11"></script>
 </body>
 </html>
