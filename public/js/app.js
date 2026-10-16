@@ -1493,7 +1493,6 @@ function buildAcumuladoContratosHtml(acumulado) {
   if (!acumulado) return "";
 
   const num = (v) => Number(v || 0).toLocaleString("pt-BR");
-  const total = Number(acumulado.total_tabela) || 0;
   const novos = Number(acumulado.novos_desde_carga) || 0;
   const carga = acumulado.carga_em || "—";
   const de = acumulado.primeiro_incremental;
@@ -1522,20 +1521,6 @@ function buildAcumuladoContratosHtml(acumulado) {
       <p class="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
         Acumulado na base
       </p>
-      <div class="grid grid-cols-3 gap-2 mb-2">
-        <div class="ct-stat-pill">
-          <p class="ct-stat-label">Total na tabela</p>
-          <p class="ct-stat-value">${num(total)}</p>
-        </div>
-        <div class="ct-stat-pill ct-stat-new">
-          <p class="ct-stat-label">Novos desde a carga</p>
-          <p class="ct-stat-value">${num(novos)}</p>
-        </div>
-        <div class="ct-stat-pill">
-          <p class="ct-stat-label">Execuções</p>
-          <p class="ct-stat-value">${num(acumulado.execucoes)}</p>
-        </div>
-      </div>
       <p class="text-[11px] text-gray-400 mb-2">
         Carga inicial ${esc(carga)}${de && ate ? ` · incrementais de ${esc(de)} a ${esc(ate)}` : ""}
       </p>
@@ -1555,10 +1540,32 @@ function buildAcumuladoContratosHtml(acumulado) {
   `;
 }
 
+function buildContratosStatsHtml(inserts, acumulado) {
+  const num = (v) => Number(v || 0).toLocaleString("pt-BR");
+  const novosExecucao = Number(inserts) || 0;
+  const novosCarga = acumulado ? Number(acumulado.novos_desde_carga) || 0 : null;
+  const execucoes = acumulado ? Number(acumulado.execucoes) || 0 : null;
+
+  return `
+    <div class="grid grid-cols-3 gap-2 mb-3">
+      <div class="ct-stat-pill ${novosExecucao > 0 ? "ct-stat-new" : ""}">
+        <p class="ct-stat-label">Novos</p>
+        <p class="ct-stat-value">${num(novosExecucao)}</p>
+      </div>
+      <div class="ct-stat-pill">
+        <p class="ct-stat-label">Novos desde a carga</p>
+        <p class="ct-stat-value">${novosCarga === null ? "—" : num(novosCarga)}</p>
+      </div>
+      <div class="ct-stat-pill">
+        <p class="ct-stat-label">Execuções</p>
+        <p class="ct-stat-value">${execucoes === null ? "—" : num(execucoes)}</p>
+      </div>
+    </div>
+  `;
+}
+
 function buildContratosRelatorioHtml(relatorio, opts = {}) {
   const inserts = Number(relatorio?.inserts) || 0;
-  const updates = Number(relatorio?.updates) || 0;
-  const total = Number(relatorio?.total_extraidos) || inserts + updates;
   const wallMs = opts.wallElapsedSec != null ? Math.round(opts.wallElapsedSec) : null;
   const scriptMs = relatorio?.duracao_segundos != null ? Math.round(relatorio.duracao_segundos) : null;
   const duracao =
@@ -1589,20 +1596,7 @@ function buildContratosRelatorioHtml(relatorio, opts = {}) {
         </div>
         <span class="text-[11px] text-gray-400 flex-shrink-0">duração ${duracao}${duracaoExtra ? `<br><span class="text-[10px]">${duracaoExtra}</span>` : ""}</span>
       </div>
-      <div class="grid grid-cols-3 gap-2 mb-3">
-        <div class="ct-stat-pill ${hasNew ? "ct-stat-new" : ""}">
-          <p class="ct-stat-label">Novos</p>
-          <p class="ct-stat-value">${inserts}</p>
-        </div>
-        <div class="ct-stat-pill">
-          <p class="ct-stat-label">Atualizados</p>
-          <p class="ct-stat-value">${updates}</p>
-        </div>
-        <div class="ct-stat-pill">
-          <p class="ct-stat-label">Extraídos</p>
-          <p class="ct-stat-value">${total}</p>
-        </div>
-      </div>
+      ${buildContratosStatsHtml(inserts, relatorio?.acumulado)}
       <p class="text-xs ${hasNew ? "text-emerald-600 dark:text-emerald-400" : "text-gray-500 dark:text-gray-400"}">
         ${
           hasNew
