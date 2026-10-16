@@ -68,9 +68,13 @@ async function handleGet(req, res) {
 
   const orderByRawSafe = ORDER_BY_WHITELIST.has(orderByRaw) ? orderByRaw : "data_termino";
   const orderDir = orderDirRaw.toUpperCase() === "ASC" ? "ASC" : "DESC";
+  // codigo e' texto 'MD<numero>' e nao e' zero-padded, entao ordenar a coluna
+  // como texto poe MD999 acima de MD2601. Ordena pelo numero.
   const orderExpr = orderByRawSafe === "data_termino"
     ? `CASE WHEN data_termino ~ '^\\d{2}/\\d{2}/\\d{4}$' THEN TO_DATE(data_termino, 'DD/MM/YYYY') END ${orderDir} NULLS LAST, CASE WHEN data_termino !~ '^\\d{2}/\\d{2}/\\d{4}$' THEN data_termino END ${orderDir} NULLS LAST`
-    : `${orderByRawSafe} ${orderDir}`;
+    : orderByRawSafe === "codigo"
+      ? `NULLIF(regexp_replace(codigo, '\\D', '', 'g'), '')::bigint ${orderDir} NULLS LAST, codigo ${orderDir}`
+      : `${orderByRawSafe} ${orderDir}`;
 
   // Rota especial: /api/contratos?alerta=1 retorna apenas a view de alertas
   if (String(alerta) === "1" || String(alerta) === "true") {

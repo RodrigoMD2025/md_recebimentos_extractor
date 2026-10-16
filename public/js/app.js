@@ -2590,6 +2590,7 @@ async function contratosApiFetch(path) {
 // =============================================================================
 let contratosPagAtual = 1;
 let contratosFiltros = { status: "", contratante: "", data_inicio: "", data_termino: "", data_termino_mes: "", semana: false };
+let contratosOrdem = { coluna: "data_termino", dir: "DESC" };
 let contratosTotal = 0;
 let contratosTotalPags = 1;
 let contratosInicializado = false;
@@ -2825,8 +2826,8 @@ function montarParamsContratos(page = 1, limit = 50) {
   const params = new URLSearchParams({
     page,
     limit,
-    order_by: "data_termino",
-    order_dir: "DESC",
+    order_by: contratosOrdem.coluna,
+    order_dir: contratosOrdem.dir,
   });
 
   if (contratosFiltros.status) params.set("status", contratosFiltros.status);
@@ -2931,6 +2932,7 @@ async function carregarContratos(page) {
     // Paginação
     setTxt("ct-pag-info", `${contratosTotal} contratos`);
     setTxt("ct-pag-paginas", `${contratosPagAtual} / ${contratosTotalPags}`);
+    atualizarIndicadorOrdemContratos();
 
     const btnAnt = document.getElementById("ct-btn-anterior");
     const btnProx = document.getElementById("ct-btn-proximo");
@@ -2948,8 +2950,30 @@ function mudarPaginaContratos(delta) {
   carregarContratos(novaPag);
 }
 
+function atualizarIndicadorOrdemContratos() {
+  const el = document.getElementById("ct-sort-codigo");
+  if (!el) return;
+  if (contratosOrdem.coluna === "codigo") {
+    el.textContent = contratosOrdem.dir === "ASC" ? "▲" : "▼";
+  } else {
+    el.textContent = "";
+  }
+}
+
+function ordenarContratos(coluna) {
+  if (contratosOrdem.coluna === coluna) {
+    contratosOrdem.dir = contratosOrdem.dir === "DESC" ? "ASC" : "DESC";
+  } else {
+    contratosOrdem = { coluna, dir: "DESC" };
+  }
+  atualizarIndicadorOrdemContratos();
+  carregarContratos(1);
+}
+
 function limparFiltrosContratos() {
   contratosFiltros = { status: "", contratante: "", data_inicio: "", data_termino: "", data_termino_mes: "", semana: false };
+  contratosOrdem = { coluna: "data_termino", dir: "DESC" };
+  atualizarIndicadorOrdemContratos();
   setVal("filtro-ct-status", "");
   setVal("filtro-ct-contratante", "");
   setVal("filtro-ct-data-inicio", "");

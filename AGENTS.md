@@ -87,8 +87,15 @@ Fix production app (Recebimentos/Contratos sections), align local server with pr
 - **`data_inicio` e' TEXTO** ('DD/MM/YYYY'). `ORDER BY data_inicio DESC` e' lexicografico e ordena `02/07/2017` acima de `01/07/2026`. Ordenar sempre com `to_date(data_inicio,'DD/MM/YYYY')`. A view ja faz isso (`min(n.inicio)` sobre data convertida), entao o app nunca teve o defeito — so queries ad hoc.
 - Estado em 16/10: 2382 contratos, 37 incrementais desde 24/07. Os 7 clientes que estavam em "renovacao pendente" (MD2342/2372/2456/2468/2516/2547/2557) tiveram renovacao extraida em outubro; `nao_ativo` caiu de 12 para 2 (MD2471, MD2376).
 
+## Ordenacao por codigo na tabela de contratos (16/10)
+- Clicar no cabecalho "Codigo" ordena a tabela por codigo (`ordenarContratos('codigo')`), DESC na primeira vez (recentes no topo, porque codigo maior = contrato mais novo), invertendo a cada clique. Setinha `▲`/`▼` no `#ct-sort-codigo`. `contratosOrdem` guarda `{coluna,dir}` e alimenta `montarParamsContratos`.
+- **`codigo` e' `MD<n>` sem zero-padding**: `ORDER BY codigo DESC` e' lexicografico e poe `MD999` acima de `MD2601`. Ordenar pelo numero: `NULLIF(regexp_replace(codigo,'\D','','g'),'')::bigint`. Feito tanto em `api/contratos.js` quanto em `server_local.js`.
+- `limparFiltrosContratos` reseta `contratosOrdem` para o default (`data_termino DESC`). Cache do `app.js` foi para `?v=17`.
+
 ## Recent Testing
 Basic contratos: 2345 total
 mes=07/2026: 14 contratos ending July 2026
 semana=1: 3 contratos ending this week
 alerta=1: 945 vencidos, 15 em 30 dias, 14 em 60 dias, 3 em 90 dias
+order_by=codigo DESC: MD2601 (16/10), MD2600/MD2599 (13/10), MD2598.. (09/10) — recentes no topo
+order_by=codigo ASC: MD1, MD2, MD3...; invalid order_by cai no default data_termino
