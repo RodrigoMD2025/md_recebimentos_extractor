@@ -148,6 +148,67 @@ async function handleGet(req, res) {
       }
 
       const row = relatorioResult.rows[0];
+
+      // O relatorio so conta a EXECUCAO atual (LIMIT 1 la em cima). O painel
+      // tambem precisa do acumulado da TABELA, que e' o numero que importa: o
+      // extrator le 30 registros por execucao, entao "8 novos" de hoje so tem
+      // significado em relacao ao total e a quantos ja vieram antes.
+      // Deriva a data de referencia (dia com mais inserts) em vez de fixar,
+      // entao acompanha sozinha uma carga completa futura.
+      let acumulado = null;
+      try {
+        const acumResult = await query(
+          `
+          WITH carga AS (
+            SELECT MAX(criado_em)::date AS data
+            FROM contratos
+            GROUP BY criado_em::date
+            ORDER BY count(*) DESC
+            LIMIT 1
+          ),
+          novos AS (
+            SELECT c.criado_em::date AS dia
+            FROM contratos c, carga
+            WHERE c.criado_em::date <> carga.data
+          ),
+          por_dia AS (
+            SELECT dia, count(*) AS novos FROM novos GROUP BY dia
+          )
+          SELECT
+            (SELECT count(*) FROM contratos) AS total_tabela,
+            to_char((SELECT data FROM carga), 'DD/MM/YYYY') AS carga_em,
+            (SELECT count(*) FROM novos) AS novos_desde_carga,
+            to_char((SELECT min(dia) FROM novos), 'DD/MM/YYYY') AS primeiro_incremental,
+            to_char((SELECT max(dia) FROM novos), 'DD/MM/YYYY') AS ultimo_incremental,
+            (SELECT count(*) FROM extracoes_contratos) AS execucoes,
+            (SELECT COALESCE(sum(inserts), 0) FROM extracoes_contratos) AS insert_reportado,
+            COALESCE(
+              (SELECT json_agg(json_build_object(
+                 'dia', to_char(dia, 'DD/MM/YYYY'), 'novos', novos) ORDER BY dia)
+               FROM por_dia),
+              '[]'::json
+            ) AS por_dia
+          `,
+          []
+        );
+        const a = acumResult.rows[0] || {};
+        acumulado = {
+          total_tabela: Number(a.total_tabela) || 0,
+          carga_em: a.carga_em || null,
+          novos_desde_carga: Number(a.novos_desde_carga) || 0,
+          primeiro_incremental: a.primeiro_incremental || null,
+          ultimo_incremental: a.ultimo_incremental || null,
+          execucoes: Number(a.execucoes) || 0,
+          insert_reportado: Number(a.insert_reportado) || 0,
+          por_dia: Array.isArray(a.por_dia) ? a.por_dia : [],
+        };
+      } catch (acumErr) {
+        // Tabela ainda nao criada ou sem criado_em: nao derruba o relatorio.
+        if (acumErr.code !== "42P01") {
+          console.error("[contratos] Erro ao montar acumulado:", acumErr.message);
+        }
+      }
+
       return res.status(200).json({
         data: {
           ...row,
@@ -156,6 +217,7 @@ async function handleGet(req, res) {
           total_extraidos: Number(row.total_extraidos) || 0,
           pages: Number(row.pages) || 0,
           duracao_segundos: Number(row.duracao_segundos) || 0,
+          acumulado,
         },
       });
     } catch (dbErr) {

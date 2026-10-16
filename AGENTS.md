@@ -78,6 +78,15 @@ Fix production app (Recebimentos/Contratos sections), align local server with pr
 - **Nao medir durante uma extracao.** Uma medicao feita por volta das 20:00 de 26/09 pegou o lote de `recebimentos` pela metade: `atraso` appeared 45 em vez de 52 e `nao_ativo` 13 em vez de 12, porque alguns contratos ja tinham o `recebimentos` novo e outros nao. Total 518 nos dois casos. Estado estavel: 51/12/9/140 clientes em atraso/renovacao/corte/ciclo.
 - 24/07 e' tambem a origem do confundidor `status='Ativo'`: o sistema de origem marca Ativo ate o ultimo dia do ciclo, entao 2347 contratos, e nao 2121, estao Ativo na fonte.
 
+## Painel de contratos: acumulado (16/10)
+- O relatorio `?relatorio=1` mostrava so a EXECUCAO (`LIMIT 1`: "8 novos" daquela rodada). Isso nao responde "quantos contratos novos entraram na plataforma", porque o extrator le 30 por vez. Agora o mesmo endpoint devolve `acumulado`, lido da TABELA `contratos` via `criado_em`, nao da `extracoes_contratos`.
+- `acumulado`: `total_tabela`, `carga_em` (dia com mais inserts, derivado), `novos_desde_carga`, `primeiro/ultimo_incremental`, `execucoes`, `insert_reportado` e `por_dia` (json_agg).
+- Painel ganhou o bloco "Acumulado na base" com Total, Novos desde a carga, Execucoes e a serie diaria.
+- **Divergencia visivel**: as execucoes reportam 38 inserts, a tabela ganhou 37. A execucao id 1 (26/07) diz 2 inserts e nenhum contrato carrega essa data; e ha 1 contrato de 10/08 sem execucao registrando. O painel avisa em vez de esconder.
+- Datas sempre com `to_char(..., 'DD/MM/YYYY')` no SQL: `date` do pg vira `Date` JS e `toISOString()` desloca o dia conforme o TZ. Mesmo bug ja pego em `base_referencia`.
+- **`data_inicio` e' TEXTO** ('DD/MM/YYYY'). `ORDER BY data_inicio DESC` e' lexicografico e ordena `02/07/2017` acima de `01/07/2026`. Ordenar sempre com `to_date(data_inicio,'DD/MM/YYYY')`. A view ja faz isso (`min(n.inicio)` sobre data convertida), entao o app nunca teve o defeito — so queries ad hoc.
+- Estado em 16/10: 2382 contratos, 37 incrementais desde 24/07. Os 7 clientes que estavam em "renovacao pendente" (MD2342/2372/2456/2468/2516/2547/2557) tiveram renovacao extraida em outubro; `nao_ativo` caiu de 12 para 2 (MD2471, MD2376).
+
 ## Recent Testing
 Basic contratos: 2345 total
 mes=07/2026: 14 contratos ending July 2026

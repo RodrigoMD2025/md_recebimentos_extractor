@@ -1489,6 +1489,72 @@ async function fetchContratosRelatorio({ runNumber, sinceIso, attempts = 8, dela
   return null;
 }
 
+function buildAcumuladoContratosHtml(acumulado) {
+  if (!acumulado) return "";
+
+  const num = (v) => Number(v || 0).toLocaleString("pt-BR");
+  const total = Number(acumulado.total_tabela) || 0;
+  const novos = Number(acumulado.novos_desde_carga) || 0;
+  const carga = acumulado.carga_em || "—";
+  const de = acumulado.primeiro_incremental;
+  const ate = acumulado.ultimo_incremental;
+  const porDia = Array.isArray(acumulado.por_dia) ? acumulado.por_dia : [];
+
+  // O relatorio conta a EXECUCAO (inserts daquela rodada); a tabela conta o
+  // que de fato entrou. Quando divergem, uma das duas mentiu -- e' sinal de
+  // insercao fora do fluxo ou linha substituida. Vale mostrar, nao esconder.
+  const reportado = Number(acumulado.insert_reportado) || 0;
+  const divergencia = reportado - novos;
+
+  const chips = porDia.length
+    ? porDia
+        .map(
+          (d) =>
+            `<span class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300">
+               ${esc(d.dia)}<span class="font-semibold text-indigo-600 dark:text-indigo-400">+${d.novos}</span>
+             </span>`
+        )
+        .join("")
+    : `<span class="text-[10px] text-gray-400">sem incrementais desde a carga</span>`;
+
+  return `
+    <div class="mt-4 pt-3 border-t border-gray-200 dark:border-gray-700">
+      <p class="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
+        Acumulado na base
+      </p>
+      <div class="grid grid-cols-3 gap-2 mb-2">
+        <div class="ct-stat-pill">
+          <p class="ct-stat-label">Total na tabela</p>
+          <p class="ct-stat-value">${num(total)}</p>
+        </div>
+        <div class="ct-stat-pill ct-stat-new">
+          <p class="ct-stat-label">Novos desde a carga</p>
+          <p class="ct-stat-value">${num(novos)}</p>
+        </div>
+        <div class="ct-stat-pill">
+          <p class="ct-stat-label">Execuções</p>
+          <p class="ct-stat-value">${num(acumulado.execucoes)}</p>
+        </div>
+      </div>
+      <p class="text-[11px] text-gray-400 mb-2">
+        Carga inicial ${esc(carga)}${de && ate ? ` · incrementais de ${esc(de)} a ${esc(ate)}` : ""}
+      </p>
+      <div class="flex flex-wrap gap-1">${chips}</div>
+      ${
+        divergencia !== 0
+          ? `<p class="text-[10px] text-amber-600 dark:text-amber-400 mt-2">
+               ⚠ as execuções reportam ${num(reportado)} novos, mas a tabela ganhou ${num(novos)} — ${
+                 divergencia > 0
+                   ? `${num(divergencia)} insert(s) sem linha correspondente`
+                   : `${num(-divergencia)} contrato(s) sem execução registrada`
+               }.
+             </p>`
+          : ""
+      }
+    </div>
+  `;
+}
+
 function buildContratosRelatorioHtml(relatorio, opts = {}) {
   const inserts = Number(relatorio?.inserts) || 0;
   const updates = Number(relatorio?.updates) || 0;
@@ -1545,6 +1611,7 @@ function buildContratosRelatorioHtml(relatorio, opts = {}) {
         }
       </p>
       ${mensagem ? `<p class="text-[11px] text-gray-400 mt-1">${mensagem}</p>` : ""}
+      ${buildAcumuladoContratosHtml(relatorio?.acumulado)}
       ${
         run?.html_url
           ? `<a href="${run.html_url}" target="_blank" rel="noopener" class="inline-flex items-center gap-1 mt-3 text-xs text-indigo-600 dark:text-indigo-400 hover:underline">
