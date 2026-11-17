@@ -108,7 +108,7 @@ async function handleStats(res) {
       SELECT COALESCE(NULLIF(btrim(estado), ''), '—') AS estado, count(*) AS total
       FROM md_clientes
       GROUP BY 1
-      ORDER BY total DESC
+      ORDER BY 1
     `),
   ]);
   const s = stats.rows[0] || {};

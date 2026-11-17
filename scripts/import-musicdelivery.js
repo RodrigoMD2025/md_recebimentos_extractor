@@ -42,6 +42,38 @@ function parseTs(val) {
 }
 function nn(v) { return v === "" || v === undefined ? null : v; }
 
+// A origem grava o estado como texto livre: "SP", "sp", "SAO PAULO", "São Paulo",
+// "PARANA"... Sem normalizar, o filtro e a lista de UFs mostram a mesma unidade
+// várias vezes. Aqui tudo vira "Nome-UF" ("São Paulo-SP").
+const UFS = {
+  AC: "Acre", AL: "Alagoas", AP: "Amapá", AM: "Amazonas", BA: "Bahia",
+  CE: "Ceará", DF: "Distrito Federal", ES: "Espírito Santo", GO: "Goiás",
+  MA: "Maranhão", MT: "Mato Grosso", MS: "Mato Grosso do Sul", MG: "Minas Gerais",
+  PA: "Pará", PB: "Paraíba", PR: "Paraná", PE: "Pernambuco", PI: "Piauí",
+  RJ: "Rio de Janeiro", RN: "Rio Grande do Norte", RS: "Rio Grande do Sul",
+  RO: "Rondônia", RR: "Roraima", SC: "Santa Catarina", SP: "São Paulo",
+  SE: "Sergipe", TO: "Tocantins",
+};
+const semAcento = (v) => String(v ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+const UF_POR_NOME = new Map(
+  Object.entries(UFS).map(([uf, nome]) => [semAcento(nome).toUpperCase(), uf])
+);
+function normalizarEstado(valor) {
+  const texto = String(valor ?? "").replace(/\s+/g, " ").trim();
+  if (!texto) return null;
+  const chave = semAcento(texto).toUpperCase();
+  if (UFS[chave]) return `${UFS[chave]}-${chave}`;
+  const porNome = UF_POR_NOME.get(chave);
+  if (porNome) return `${UFS[porNome]}-${porNome}`;
+  // "SÃO PAULO - SP" / "SAO PAULO/SP": nome seguido da sigla.
+  const combo = chave.match(/^(.*?)[\s/,-]+([A-Z]{2})$/);
+  if (combo && UFS[combo[2]] && UF_POR_NOME.get(combo[1].trim()) === combo[2]) {
+    return `${UFS[combo[2]]}-${combo[2]}`;
+  }
+  // Valor que não é UF (ex.: "10"): não inventa, deixa em branco.
+  return null;
+}
+
 async function bulkInsert(client, table, cols, rows) {
   if (!rows.length) return;
   for (let i = 0; i < rows.length; i += BATCH) {
@@ -102,7 +134,7 @@ async function main() {
     const cRows = clientes.map((r) => [
       r.id, nn(r.nome_listagem), nn(r.nome_razaosocial), nn(r.nome_fantasia), nn(r.cnpj), nn(r.telefone), nn(r.celular), nn(r.email), r.status,
       nn(r.contrato_vinculado), nn(r.data_inicio), nn(r.data_fim), parseDate(r.data_inicio_iso), parseDate(r.data_fim_iso), nn(r.tipo), parseJson(r.filiais_vinculadas),
-      nn(r.endereco), nn(r.cidade), nn(r.estado), nn(r.pais), nn(r.cep), nn(r.nome_responsavel), nn(r.rgcpf_responsavel), nn(r.email_responsavel),
+      nn(r.endereco), nn(r.cidade), normalizarEstado(r.estado), nn(r.pais), nn(r.cep), nn(r.nome_responsavel), nn(r.rgcpf_responsavel), nn(r.email_responsavel),
       nn(r.telefone_responsavel), nn(r.celular_responsavel), nn(r.banco), nn(r.agencia), nn(r.conta), nn(r.titular), nn(r.forma_envio), nn(r.observacoes),
       nn(r.feedback), parseJson(r.checklist_json), nn(r.responsavel_listagem), nn(r.playlists_listagem), parseJson(r.playlists_listagem_json),
       nn(r.forma_envio_listagem), nn(r.observacoes_listagem), nn(r.status_listagem), nn(r.url), parseJson(r.dados_json), nn(r.coleta_avisos),
