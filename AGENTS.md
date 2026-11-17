@@ -99,3 +99,13 @@ semana=1: 3 contratos ending this week
 alerta=1: 945 vencidos, 15 em 30 dias, 14 em 60 dias, 3 em 90 dias
 order_by=codigo DESC: MD2601 (16/10), MD2600/MD2599 (13/10), MD2598.. (09/10) — recentes no topo
 order_by=codigo ASC: MD1, MD2, MD3...; invalid order_by cai no default data_termino
+
+## Clientes Music Delivery (16/11)
+- Novo menu lateral "Clientes MD" (`data-section="clientes"`), com cards (Total/Ativos/Inativos/Playlists), filtros (busca por nome/fantasia/CNPJ/e-mail, status, UF), tabela paginada e modal de detalhe (dados cadastrais, endereco, configuracao sazonal, contatos, playlists com link, documentos).
+- Dados vem do projeto irmao `../musicdelivery-extractor` (SQLite `musicdelivery.db`, 573 clientes / 5346 playlists / 573 configuracoes). Importados para o Neon pelas tabelas `md_clientes`, `md_configuracoes`, `md_contatos`, `md_documentos`, `md_playlists`, `md_execucoes`, `md_meta`. Schema em `sql/musicdelivery.sql`.
+- Import: `node scripts/import-musicdelivery.js [caminho]` (usa `node:sqlite` nativo, sem dep extra; lê `DATABASE_URL` do `.env`). Faz `TRUNCATE` + bulk insert em transacao. Colunas JSON (`filiais_vinculadas`, `checklist_json`, `playlists_listagem_json`, `dados_json`) viram `JSONB`; passar a STRING, nao o objeto JS (o driver pg nao serializa objeto para jsonb).
+- API `api/md-clientes.js`: `?stats=1` (contadores + distribuicao por UF), `?id=N` (detalhe), listagem com `busca`/`status`/`estado`/`order_by`/`order_dir`/page/limit. Espelhado em `server_local.js`.
+- **UF e' texto sujo na fonte**: `SP`, `SÃO PAULO`, `SAO PAULO`, `São Paulo` contam separado (58 grupos distintos, 103 em branco). O filtro usa igualdade exata no valor bruto; normalizar exigiria uma regra de limpeza no import.
+- `coleta_completa=1` em todos; `status=1` (ativo) em 564, `status=0` em 9. `sazonal=1` em 1 cliente.
+- Nao ha execucao do extrator Python pelo dashboard (ele roda local e grava SQLite). Rodar de dentro da Vercel exigiria GitHub Action/worker, como o extrator de recebimentos.
+- Cache do `app.js` foi para `?v=18`.

@@ -2607,6 +2607,16 @@ let atualizacaoTotalPags = 1;
 let atualizacaoOrdem = { coluna: "prioridade", dir: "ASC" };
 let atualizacaoInicializada = false;
 
+// =============================================================================
+// CLIENTES (Music Delivery) — variáveis globais
+// =============================================================================
+let clientesPagAtual = 1;
+let clientesFiltros = { busca: "", status: "", estado: "" };
+let clientesOrdem = { coluna: "nome", dir: "ASC" };
+let clientesTotal = 0;
+let clientesTotalPags = 1;
+let clientesInicializado = false;
+
 // Atualizar navigateTo para incluir contratos
 const _originalNavigateTo = navigateTo;
 navigateTo = function(section) {
@@ -2619,6 +2629,7 @@ navigateTo = function(section) {
     dados: "Dados",
     contratos: "Contratos",
     atualizacao: "Sem Atualização",
+    clientes: "Clientes Music Delivery",
     settings: "Configurações",
   };
   const titleEl = document.getElementById("page-title");
@@ -2635,7 +2646,346 @@ navigateTo = function(section) {
     carregarAtualizacao(1);
     atualizacaoInicializada = true;
   }
+
+  if (section === "clientes" && !clientesInicializado) {
+    carregarClientesStats();
+    carregarClientes(1);
+    clientesInicializado = true;
+  }
 };
+
+// =============================================================================
+// CLIENTES (Music Delivery) — listagem, filtros e detalhe
+// =============================================================================
+async function clientesApiFetch(path) {
+  const headers = await Auth.headers();
+  const url = buildApiUrl(path);
+  return fetch(url, { headers });
+}
+
+function lerFiltrosClientesInput() {
+  clientesFiltros.busca = getVal("filtro-md-busca").trim();
+  clientesFiltros.status = getVal("filtro-md-status");
+  clientesFiltros.estado = getVal("filtro-md-estado");
+}
+
+function montarParamsClientes(page = 1, limit = 50) {
+  const params = new URLSearchParams({
+    page,
+    limit,
+    order_by: clientesOrdem.coluna,
+    order_dir: clientesOrdem.dir,
+  });
+  if (clientesFiltros.busca) params.set("busca", clientesFiltros.busca);
+  if (clientesFiltros.status) params.set("status", clientesFiltros.status);
+  if (clientesFiltros.estado) params.set("estado", clientesFiltros.estado);
+  return params;
+}
+
+function resumoFiltrosClientes() {
+  const partes = [];
+  if (clientesFiltros.busca) partes.push(`"${clientesFiltros.busca}"`);
+  if (clientesFiltros.status === "1") partes.push("ativos");
+  if (clientesFiltros.status === "0") partes.push("inativos");
+  if (clientesFiltros.estado) partes.push(clientesFiltros.estado);
+  return partes.length ? `Filtros: ${partes.join(" · ")}` : "";
+}
+
+async function carregarClientesStats() {
+  try {
+    const resp = await clientesApiFetch("/api/md-clientes?stats=1");
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const s = await resp.json();
+    setTxt("md-card-total", s.total ?? "--");
+    setTxt("md-card-ativos", s.ativos ?? "--");
+    setTxt("md-card-inativos", s.inativos ?? "--");
+    setTxt("md-card-playlists", s.playlists ?? "--");
+    setTxt(
+      "md-card-playlists-sub",
+      s.clientes_com_playlist ? `${s.clientes_com_playlist} clientes com playlist` : ""
+    );
+    const sel = document.getElementById("filtro-md-estado");
+    if (sel) {
+      const atual = sel.value;
+      sel.innerHTML =
+        `<option value="">Todos</option>` +
+        (s.estados || [])
+          .filter((e) => e.estado && e.estado !== "—")
+          .map(
+            (e) =>
+              `<option value="${esc(e.estado)}">${esc(e.estado)} (${e.total})</option>`
+          )
+          .join("");
+      sel.value = atual || "";
+    }
+  } catch (e) {
+    console.error("[clientes] Erro ao carregar stats:", e);
+  }
+}
+
+async function carregarClientes(page = 1) {
+  clientesPagAtual = page || 1;
+  lerFiltrosClientesInput();
+
+  const loadingEl = document.getElementById("clientes-loading");
+  const tableEl = document.getElementById("clientes-table");
+  const tbody = document.getElementById("clientes-tbody");
+
+  if (loadingEl) {
+    loadingEl.textContent = "Carregando clientes...";
+    loadingEl.classList.remove("hidden");
+  }
+  if (tableEl) tableEl.classList.add("hidden");
+
+  try {
+    const resp = await clientesApiFetch(
+      `/api/md-clientes?${montarParamsClientes(clientesPagAtual, 50)}`
+    );
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+    const result = await resp.json();
+    const data = result.data || [];
+    clientesTotal = result.total || 0;
+    clientesTotalPags = result.pages || 1;
+
+    tbody.innerHTML = data.length
+      ? data
+          .map((c) => {
+            const local = [c.cidade, c.estado].filter(Boolean).join(" / ");
+            const contrato =
+              c.contrato_vinculado && !/não existe/i.test(c.contrato_vinculado)
+                ? c.contrato_vinculado
+                : "—";
+            return `
+        <tr class="hover:bg-indigo-50/60 dark:hover:bg-indigo-500/5 cursor-pointer" onclick="abrirDetalheCliente(${Number(c.id)})">
+          <td class="px-4 py-3 font-mono text-xs">${esc(c.id)}</td>
+          <td class="px-4 py-3 font-medium">${esc(c.nome_razaosocial || "—")}</td>
+          <td class="px-4 py-3 text-xs text-gray-500">${esc(c.nome_fantasia || "—")}</td>
+          <td class="px-4 py-3 text-xs font-mono">${esc(c.cnpj || "—")}</td>
+          <td class="px-4 py-3 text-xs">${esc(local || "—")}</td>
+          <td class="px-4 py-3 text-xs">${Number(c.playlist_count) || 0}</td>
+          <td class="px-4 py-3 text-xs">${esc(contrato)}</td>
+          <td class="px-4 py-3"><span class="badge ${c.status === 1 ? "badge-success" : "badge-neutral"}">${esc(c.status_listagem || (c.status === 1 ? "Ativo" : "Inativo"))}</span></td>
+        </tr>`;
+          })
+          .join("")
+      : `<tr><td colspan="8" class="px-4 py-8 text-center text-gray-400">Nenhum cliente encontrado.</td></tr>`;
+
+    if (loadingEl) loadingEl.classList.add("hidden");
+    if (tableEl) tableEl.classList.remove("hidden");
+
+    setTxt("md-pag-info", `${clientesTotal} clientes`);
+    setTxt("md-pag-paginas", `${clientesPagAtual} / ${clientesTotalPags}`);
+    setTxt("md-filtro-resumo", resumoFiltrosClientes());
+
+    const btnAnt = document.getElementById("md-btn-anterior");
+    const btnProx = document.getElementById("md-btn-proximo");
+    if (btnAnt) btnAnt.disabled = clientesPagAtual <= 1;
+    if (btnProx) btnProx.disabled = clientesPagAtual >= clientesTotalPags;
+  } catch (e) {
+    console.error("[clientes] Erro ao carregar:", e);
+    if (loadingEl) {
+      loadingEl.textContent = "Erro ao carregar clientes.";
+      loadingEl.classList.remove("hidden");
+    }
+  }
+}
+
+function aplicarFiltrosClientes() {
+  carregarClientes(1);
+}
+
+function limparFiltrosClientes() {
+  clientesFiltros = { busca: "", status: "", estado: "" };
+  setVal("filtro-md-busca", "");
+  setVal("filtro-md-status", "");
+  setVal("filtro-md-estado", "");
+  carregarClientes(1);
+}
+
+function mudarPaginaClientes(delta) {
+  const novaPag = clientesPagAtual + delta;
+  if (novaPag < 1 || novaPag > clientesTotalPags) return;
+  carregarClientes(novaPag);
+}
+
+function ordenarClientes(coluna) {
+  if (clientesOrdem.coluna === coluna) {
+    clientesOrdem.dir = clientesOrdem.dir === "ASC" ? "DESC" : "ASC";
+  } else {
+    clientesOrdem = { coluna, dir: coluna === "playlists" ? "DESC" : "ASC" };
+  }
+  carregarClientes(1);
+}
+
+function mdInfo(label, value) {
+  return `<div><p class="text-[11px] uppercase tracking-wide text-gray-400">${esc(label)}</p><p class="text-sm">${value ? esc(value) : "—"}</p></div>`;
+}
+
+async function abrirDetalheCliente(id) {
+  const modal = document.getElementById("md-detalhe-modal");
+  const conteudo = document.getElementById("md-detalhe-conteudo");
+  if (!modal) return;
+  modal.classList.remove("hidden");
+  modal.classList.add("flex");
+  if (conteudo) conteudo.innerHTML = `<p class="text-sm text-gray-400">Carregando...</p>`;
+  try {
+    const resp = await clientesApiFetch(
+      `/api/md-clientes?id=${encodeURIComponent(id)}`
+    );
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const d = await resp.json();
+    if (conteudo) conteudo.innerHTML = montarDetalheClienteHtml(d);
+  } catch (e) {
+    if (conteudo)
+      conteudo.innerHTML = `<p class="text-sm text-rose-500">Erro ao carregar cliente: ${esc(e.message)}</p>`;
+  }
+}
+
+function fecharDetalheCliente() {
+  const modal = document.getElementById("md-detalhe-modal");
+  if (!modal) return;
+  modal.classList.add("hidden");
+  modal.classList.remove("flex");
+}
+
+function montarDetalheClienteHtml(d) {
+  const c = d.cliente || {};
+  const cfg = d.configuracao;
+  const contatos = d.contatos || [];
+  const playlists = d.playlists || [];
+  const docs = d.documentos || [];
+  const statusLabel = c.status_listagem || (c.status === 1 ? "Ativo" : "Inativo");
+  const local = [c.cidade, c.estado].filter(Boolean).join(" / ");
+
+  const contatoLinhas = contatos.length
+    ? contatos
+        .map(
+          (t) => `<tr>
+            <td class="px-3 py-2 text-xs">${esc(t.cargo_area || "—")}</td>
+            <td class="px-3 py-2 text-xs">${esc(t.nome || "—")}</td>
+            <td class="px-3 py-2 text-xs">${esc(t.email || "—")}</td>
+            <td class="px-3 py-2 text-xs">${esc(t.telefone_celular || "—")}</td>
+          </tr>`
+        )
+        .join("")
+    : `<tr><td colspan="4" class="px-3 py-3 text-xs text-gray-400">Sem contatos adicionais.</td></tr>`;
+
+  const playlistLinhas = playlists.length
+    ? playlists
+        .map(
+          (p) => `<tr>
+            <td class="px-3 py-2 text-xs font-mono"><a class="text-indigo-600 hover:underline" href="${esc(p.url || "#")}" target="_blank" rel="noopener">${esc(p.codigo || p.playlist_id || "—")}</a></td>
+            <td class="px-3 py-2 text-xs">${esc(p.nome || "—")}</td>
+            <td class="px-3 py-2 text-xs">${esc(p.data_vinculacao || "—")}</td>
+            <td class="px-3 py-2 text-xs">${p.nao_mesclar ? "Sim" : "—"}</td>
+          </tr>`
+        )
+        .join("")
+    : `<tr><td colspan="4" class="px-3 py-3 text-xs text-gray-400">Sem playlists vinculadas.</td></tr>`;
+
+  const docLinhas = docs.length
+    ? docs
+        .map(
+          (doc) => `<li class="text-xs flex items-center justify-between gap-2 py-1 border-b border-gray-100 dark:border-gray-800 last:border-0">
+            <span>${esc(doc.nome || "—")}</span>
+            <span class="text-gray-400">${esc(doc.data_upload || "")}</span>
+          </li>`
+        )
+        .join("")
+    : `<p class="text-xs text-gray-400">Sem documentos.</p>`;
+
+  const configHtml = cfg
+    ? `${mdInfo("Sazonal", cfg.sazonal ? "Sim" : "Não")}${mdInfo("Período sazonal", [cfg.data_inicio, cfg.data_fim].filter(Boolean).join(" a "))}${mdInfo("Músicas sazonais", cfg.musicas_sazonais)}${mdInfo("Músicas base", cfg.musicas_playlist_base)}`
+    : `<p class="text-xs text-gray-400">Sem configuração registrada.</p>`;
+
+  return `
+    <div class="flex items-start justify-between gap-4 mb-4">
+      <div>
+        <p class="text-[11px] font-mono text-gray-400">#${esc(c.id)}</p>
+        <h3 class="text-lg font-bold">${esc(c.nome_razaosocial || "—")}</h3>
+        <p class="text-sm text-gray-500">${esc(c.nome_fantasia || "")}</p>
+      </div>
+      <div class="flex items-center gap-2">
+        <span class="badge ${c.status === 1 ? "badge-success" : "badge-neutral"}">${esc(statusLabel)}</span>
+        <button onclick="fecharDetalheCliente()" class="px-3 py-1.5 text-xs border border-gray-200 dark:border-gray-700 rounded-lg">Fechar</button>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
+      ${mdInfo("CNPJ", c.cnpj)}
+      ${mdInfo("Tipo", c.tipo)}
+      ${mdInfo("Cidade/UF", local)}
+      ${mdInfo("Telefone", c.telefone || c.celular)}
+      ${mdInfo("E-mail", c.email)}
+      ${mdInfo("Contrato", c.contrato_vinculado)}
+      ${mdInfo("Início", c.data_inicio)}
+      ${mdInfo("Fim", c.data_fim)}
+      ${mdInfo("Responsável", c.nome_responsavel)}
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+      <div class="rounded-lg border border-gray-200 dark:border-gray-800 p-3">
+        <p class="text-xs font-semibold mb-2">Endereço</p>
+        <p class="text-sm">${esc(c.endereco || "—")}</p>
+        <p class="text-xs text-gray-500">${esc([c.cidade, c.estado, c.cep].filter(Boolean).join(" · ") || "")}</p>
+      </div>
+      <div class="rounded-lg border border-gray-200 dark:border-gray-800 p-3">
+        <p class="text-xs font-semibold mb-2">Configuração</p>
+        <div class="grid grid-cols-2 gap-2">${configHtml}</div>
+      </div>
+    </div>
+
+    <div class="rounded-lg border border-gray-200 dark:border-gray-800 mb-4">
+      <p class="text-xs font-semibold px-3 py-2 border-b border-gray-200 dark:border-gray-800">Contatos (${contatos.length})</p>
+      <table class="w-full"><tbody class="divide-y divide-gray-100 dark:divide-gray-800">${contatoLinhas}</tbody></table>
+    </div>
+
+    <div class="rounded-lg border border-gray-200 dark:border-gray-800 mb-4">
+      <p class="text-xs font-semibold px-3 py-2 border-b border-gray-200 dark:border-gray-800">Playlists (${playlists.length})</p>
+      <div class="max-h-64 overflow-y-auto">
+        <table class="w-full"><tbody class="divide-y divide-gray-100 dark:divide-gray-800">${playlistLinhas}</tbody></table>
+      </div>
+    </div>
+
+    <div class="rounded-lg border border-gray-200 dark:border-gray-800 p-3">
+      <p class="text-xs font-semibold mb-2">Documentos (${docs.length})</p>
+      <ul>${docLinhas}</ul>
+    </div>
+  `;
+}
+
+async function exportarClientesCSV() {
+  try {
+    const pageSize = 500;
+    let page = 1;
+    let total = Infinity;
+    const linhas = [];
+    while (linhas.length < total && page <= 50) {
+      const resp = await clientesApiFetch(
+        `/api/md-clientes?${montarParamsClientes(page, pageSize)}`
+      );
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const r = await resp.json();
+      total = r.total || 0;
+      const lote = r.data || [];
+      linhas.push(...lote);
+      if (!lote.length) break;
+      page++;
+    }
+    if (!linhas.length) return toast("Nenhum cliente para exportar", "warning");
+    const headers = ["Codigo", "Razao Social", "Fantasia", "CNPJ", "Cidade", "UF", "Playlists", "Contrato", "Status"];
+    const rows = linhas.map((c) => [
+      csvEsc(c.id), csvEsc(c.nome_razaosocial), csvEsc(c.nome_fantasia), csvEsc(c.cnpj),
+      csvEsc(c.cidade), csvEsc(c.estado), csvEsc(c.playlist_count), csvEsc(c.contrato_vinculado), csvEsc(c.status_listagem),
+    ]);
+    const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    downloadBlob(new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" }), "clientes-music-delivery.csv");
+    toast(`${linhas.length} clientes exportados`, "success");
+  } catch (e) {
+    toast(`Erro ao exportar clientes: ${e.message}`, "error");
+  }
+}
 
 // =============================================================================
 // CONTRATOS — Carregar alertas (cards)
