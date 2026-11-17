@@ -132,7 +132,9 @@ async function carregarPlaylists(clienteId) {
     SELECT id, cliente_id, ordem, playlist_id, nome, codigo, nao_mesclar, data_vinculacao, url
     FROM md_playlists
     WHERE cliente_id = $1
-    ORDER BY ordem, id
+    ORDER BY CASE WHEN data_vinculacao ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}$'
+                  THEN to_date(data_vinculacao, 'DD/MM/YYYY') END ASC NULLS LAST,
+             id
   `, [clienteId]);
   const ids = pls.rows.map((p) => p.playlist_id).filter((n) => Number.isFinite(n));
   if (!ids.length) return [];
