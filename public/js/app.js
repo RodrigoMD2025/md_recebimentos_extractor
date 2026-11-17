@@ -3007,7 +3007,7 @@ function montarDetalheClienteHtml(d) {
             <td class="px-3 py-2 text-xs font-mono"><a class="text-indigo-600 hover:underline" href="${esc(p.url || "#")}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${esc(p.codigo || p.playlist_id || "—")}</a></td>
             <td class="px-3 py-2 text-xs font-medium">${esc(det?.titulo || p.nome || "—")}${p.nao_mesclar ? ` <span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">não mesclar</span>` : ""}</td>
             <td class="px-3 py-2 text-xs text-gray-500">${esc(det?.data_criacao || "—")}</td>
-            <td class="px-3 py-2 text-xs text-right">${det ? Number(det.musicas_count) || 0 : "—"}</td>
+            <td class="px-3 py-2 text-xs text-right">${det?.titulo ? Number(det.musicas_count) || 0 : "—"}</td>
           </tr>`;
         })
         .join("")
