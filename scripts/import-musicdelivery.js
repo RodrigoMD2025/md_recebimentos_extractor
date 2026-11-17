@@ -68,21 +68,27 @@ async function main() {
 
   console.log("Criando/atualizando schema no Neon...");
   await pool.query(schemaSql);
+  // Documentos anexos e configuração sazonal saíram do modelo.
+  await pool.query("DROP TABLE IF EXISTS md_documentos, md_configuracoes");
 
-  const clientes = sqlite.prepare("SELECT * FROM clientes").all();
-  const contatos = sqlite.prepare("SELECT * FROM contatos_cliente").all();
-  const documentos = sqlite.prepare("SELECT * FROM documentos_cliente").all();
-  const playlists = sqlite.prepare("SELECT * FROM playlists_cliente").all();
-  const configs = sqlite.prepare("SELECT * FROM configuracoes_cliente").all();
-  const execucoes = sqlite.prepare("SELECT * FROM execucoes").all();
-  const metas = sqlite.prepare("SELECT * FROM meta").all();
+  const readTable = (name) => {
+    try { return sqlite.prepare(`SELECT * FROM ${name}`).all(); }
+    catch (e) { if (/no such table/.test(e.message)) return []; throw e; }
+  };
+  const clientes = readTable("clientes");
+  const contatos = readTable("contatos_cliente");
+  const playlists = readTable("playlists_cliente");
+  const detalhes = readTable("playlists_detalhes");
+  const vinculos = readTable("playlist_clientes");
+  const execucoes = readTable("execucoes");
+  const metas = readTable("meta");
 
-  console.log(`Lidos do SQLite: ${clientes.length} clientes, ${playlists.length} playlists, ${configs.length} configs, ${contatos.length} contatos, ${documentos.length} docs`);
+  console.log(`Lidos do SQLite: ${clientes.length} clientes, ${playlists.length} playlists, ${detalhes.length} detalhes, ${vinculos.length} vínculos, ${contatos.length} contatos`);
 
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    await client.query("TRUNCATE md_playlists, md_contatos, md_documentos, md_configuracoes, md_execucoes, md_meta, md_clientes RESTART IDENTITY CASCADE");
+    await client.query("TRUNCATE md_playlists, md_playlist_clientes, md_playlist_detalhes, md_contatos, md_execucoes, md_meta, md_clientes RESTART IDENTITY CASCADE");
 
     const cCols = [
       "id","nome_listagem","nome_razaosocial","nome_fantasia","cnpj","telefone","celular","email","status",
@@ -111,23 +117,31 @@ async function main() {
     );
     console.log(`Inseridas ${playlists.length} playlists.`);
 
-    await bulkInsert(client, "md_configuracoes",
-      ["cliente_id","id_configuracao","sazonal","data_inicio","data_fim","musicas_sazonais","musicas_playlist_base","atualizado_em"],
-      configs.map((r) => [r.cliente_id, r.id_configuracao, r.sazonal, nn(r.data_inicio), nn(r.data_fim), r.musicas_sazonais, r.musicas_playlist_base, parseTs(r.atualizado_em)])
+    await bulkInsert(client, "md_playlist_detalhes",
+      ["playlist_id","titulo","tipo_playlist","genero","idades","classes_sociais","hour_start","hour_end","observacoes","status_playlist","musicas_count","musicas","codigo_contratos","data_criacao","coletado_em"],
+      detalhes.map((r) => [
+        r.playlist_id, nn(r.titulo), nn(r.tipo_playlist), nn(r.genero), parseJson(r.idades), parseJson(r.classes_sociais),
+        nn(r.hour_start), nn(r.hour_end), nn(r.observacoes), r.status_playlist, r.musicas_count ?? 0,
+        parseJson(r.musicas_json ?? r.musicas), parseJson(r.codigo_contratos), nn(r.data_criacao), parseTs(r.coletado_em),
+      ])
     );
-    console.log(`Inseridas ${configs.length} configurações.`);
+    console.log(`Inseridos ${detalhes.length} detalhes de playlist.`);
+
+    await bulkInsert(client, "md_playlist_clientes",
+      ["playlist_id","cliente_id","nome_cliente","codigo_contrato","codigo_numero","tocar_sazonal","data_inicial","data_final"],
+      vinculos.map((r) => [
+        r.playlist_id, r.cliente_id, nn(r.nome_cliente), nn(r.codigo_contrato),
+        r.codigo_contrato ? Number(String(r.codigo_contrato).replace(/\D/g, "")) || null : null,
+        r.tocar_sazonal, nn(r.data_inicial), nn(r.data_final),
+      ])
+    );
+    console.log(`Inseridos ${vinculos.length} vínculos de playlist.`);
 
     await bulkInsert(client, "md_contatos",
       ["cliente_id","ordem","cargo_area","nome","email","telefone_celular"],
       contatos.map((r) => [r.cliente_id, r.ordem, nn(r.cargo_area), nn(r.nome), nn(r.email), nn(r.telefone_celular)])
     );
     console.log(`Inseridos ${contatos.length} contatos.`);
-
-    await bulkInsert(client, "md_documentos",
-      ["cliente_id","ordem","documento_id","nome","data_upload","url"],
-      documentos.map((r) => [r.cliente_id, r.ordem, r.documento_id, nn(r.nome), nn(r.data_upload), nn(r.url)])
-    );
-    console.log(`Inseridos ${documentos.length} documentos.`);
 
     await bulkInsert(client, "md_execucoes",
       ["id","iniciado_em","finalizado_em","paginas","clientes_novos","clientes_pulados","erros","status","mensagem"],

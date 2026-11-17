@@ -1,0 +1,63 @@
+name: Clientes MD
+run-name: "Clientes MD - Extração de clientes e playlists"
+
+on:
+  workflow_dispatch:
+
+  repository_dispatch:
+    types: [run-musicdelivery]
+
+jobs:
+  extrair-musicdelivery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v7
+
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: python_musicdelivery/requirements.txt
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Instalar dependências
+        run: |
+          pip install --upgrade pip
+          pip install -r python_musicdelivery/requirements.txt
+          npm ci --omit=dev
+
+      - name: Executar extração dos Clientes MD
+        env:
+          # Mesmas credenciais do extrator de contratos (mesmo sistema Music Delivery).
+          CLIENT_EMAIL: ${{ secrets.CLIENT_EMAIL }}
+          CLIENT_SENHA: ${{ secrets.CLIENT_SENHA }}
+        run: |
+          python python_musicdelivery/musicdelivery_extract.py \
+            --db /tmp/musicdelivery.db \
+            --refresh \
+            --delay 0.1 \
+            --retry-playlists \
+            --log-file -
+
+      - name: Importar dados para o Neon
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: node scripts/import-musicdelivery.js /tmp/musicdelivery.db
+
+      - name: Upload de logs em caso de erro
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-musicdelivery-${{ github.run_number }}
+          path: python_musicdelivery/*.log
+          retention-days: 7
+          if-no-files-found: ignore

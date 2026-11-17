@@ -393,6 +393,9 @@ td { max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: n
 .run-action-card-indigo::before {
     background: linear-gradient(90deg, #6366f1, #a78bfa);
 }
+.run-action-card-green::before {
+    background: linear-gradient(90deg, #059669, #34d399);
+}
 .run-action-card:hover {
     transform: translateY(-2px);
     box-shadow: 0 10px 28px rgba(0,0,0,.08);
@@ -457,6 +460,13 @@ td { max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: n
 }
 .run-action-btn-indigo:hover:not(:disabled) {
     box-shadow: 0 8px 20px rgba(79,70,229,.38);
+}
+.run-action-btn-green {
+    background: linear-gradient(135deg, #047857, #10b981);
+    box-shadow: 0 6px 16px rgba(5,150,105,.28);
+}
+.run-action-btn-green:hover:not(:disabled) {
+    box-shadow: 0 8px 20px rgba(5,150,105,.38);
 }
 
 .run-status-bar {

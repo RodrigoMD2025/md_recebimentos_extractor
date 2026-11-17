@@ -562,6 +562,28 @@ Configure os seguintes secrets no GitHub:
 
 > Credenciais e tokens não devem ser armazenados diretamente no código-fonte.
 
+A extração de **Clientes MD** reaproveita `CLIENT_EMAIL` e `CLIENT_SENHA`, as mesmas
+credenciais já usadas pela extração de contratos — não é necessário configurar um
+login novo.
+
+## Extração de Clientes MD
+
+O workflow `.github/workflows/musicdelivery.yml` pode ser disparado pelo botão **Extrair Clientes MD**
+(no menu *Executar*) ou por `workflow_dispatch`. Ele roda o extrator em
+`python_musicdelivery/musicdelivery_extract.py`, gera um SQLite temporário e importa para o Neon
+com `node scripts/import-musicdelivery.js`.
+
+A coleta lê cadastros, contatos, playlists vinculadas e — para cada playlist única — abre
+`/playlists/edit/<id>` para coletar metadados, músicas e a tabela *Clientes vinculados à Playlist*.
+O campo `codigo_contrato` (`MD<n>`) é cruzado com `contratos.codigo`, alimentando o card
+**Contratos Cruzados** e o detalhe da playlist no dashboard. Documentos anexos e a configuração
+de período sazonal não são coletados.
+
+A **data de criação** da playlist não aparece em `/playlists/edit/<id>`: ela é lida da listagem
+`/playlists/<offset>` (30 por página) ao final da execução, e é o que a coluna *Criação* do
+modal do cliente mostra. Playlists que a origem responde com erro ficam sem metadados/músicas,
+mas mantêm a data de criação; `--retry-playlists` tenta recuperá-las ao final de cada execução.
+
 ---
 
 # 🌐 Deploy no Vercel

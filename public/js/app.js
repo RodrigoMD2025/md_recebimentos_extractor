@@ -239,6 +239,7 @@ function navigateTo(section) {
   if (section === "settings") syncFormFields();
   if (section === "run") {
     checkGithubConnection();
+    resumeMDMonitorIfActive();
     resumeRecebimentosMonitorIfActive().then((recResumed) => {
       if (!recResumed) {
         resumeContratosMonitorIfActive().then((ctResumed) => {
@@ -322,24 +323,28 @@ async function loadRuns(forHistory = false) {
   console.debug('[loadRuns] iniciando carga de runs'); debugMsg('loadRuns: iniciando');
 
   try {
-    const [recData, ctData] = await Promise.all([
+    const [recData, ctData, mdData] = await Promise.all([
       githubApiFetch("/api/github-runs", {
         params: { per_page: 50, page: 1, with_inputs: "true", workflow_id: "recebimentos.yml" },
       }),
       githubApiFetch("/api/github-runs", {
         params: { per_page: 50, page: 1, with_inputs: "true", workflow_id: "contratos.yml" },
       }),
+      githubApiFetch("/api/github-runs", {
+        params: { per_page: 50, page: 1, with_inputs: "true", workflow_id: "musicdelivery.yml" },
+      }).catch(() => ({ workflow_runs: [] })),
     ]);
 
-    cfg.owner = recData.owner || ctData.owner || cfg.owner;
-    cfg.repo = recData.repo || ctData.repo || cfg.repo;
+    cfg.owner = recData.owner || ctData.owner || mdData.owner || cfg.owner;
+    cfg.repo = recData.repo || ctData.repo || mdData.repo || cfg.repo;
     cfg.workflowId = recData.workflowId || cfg.workflowId;
-    cfg.hasGithubToken = Boolean(recData.hasToken || ctData.hasToken);
+    cfg.hasGithubToken = Boolean(recData.hasToken || ctData.hasToken || mdData.hasToken);
     setGithubConfigUI();
 
     const recRuns = (recData?.workflow_runs ?? []).map((r) => ({ ...r, workflow_type: "recebimentos" }));
     const ctRuns = (ctData?.workflow_runs ?? []).map((r) => ({ ...r, workflow_type: "contratos" }));
-    const combined = [...recRuns, ...ctRuns].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    const mdRuns = (mdData?.workflow_runs ?? []).map((r) => ({ ...r, workflow_type: "musicdelivery" }));
+    const combined = [...recRuns, ...ctRuns, ...mdRuns].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
     allRuns = combined;
 
     updateStats(allRuns);
@@ -851,6 +856,8 @@ function fillTable(runs, tbodyId, tableId, placeholderId, withTrigger, execucaoY
       let yearsContent;
       if (wtype === "contratos") {
         yearsContent = `<span class="text-[11px] font-medium px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-300">Contratos</span>`;
+      } else if (wtype === "musicdelivery") {
+        yearsContent = `<span class="text-[11px] font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-300">Clientes MD</span>`;
       } else {
         const execucaoId = String(run.run_number || "");
         const dbYears = execucaoYearsMap[execucaoId] || [];
@@ -1084,6 +1091,121 @@ async function triggerWorkflowContratos() {
   } finally {
     if (btn) btn.disabled = false;
   }
+}
+
+// ── Clientes MD: disparo + monitor ──
+let mdMonitorTimer = null;
+
+async function triggerWorkflowMD() {
+  const btn = document.getElementById("run-md-btn");
+  const errorEl = document.getElementById("error-monitor-md");
+  if (btn) btn.disabled = true;
+  if (errorEl) { errorEl.classList.add("hidden"); errorEl.innerHTML = ""; }
+
+  try {
+    await githubApiFetch("/api/github-dispatch-musicdelivery", {
+      method: "POST",
+      body: { ref: "main", inputs: {} },
+    });
+    toast("Extração de Clientes MD iniciada! 🚀", "success");
+    startMDMonitor();
+  } catch (err) {
+    const msg = err.message || "Erro desconhecido";
+    toast(`Erro: ${msg}`, "error");
+    if (errorEl) {
+      errorEl.classList.remove("hidden");
+      errorEl.innerHTML = `
+        <div class="flex items-start gap-3">
+          <span class="text-red-500 text-lg">⚠️</span>
+          <div class="text-sm">
+            <p class="font-semibold text-red-600 mb-1">Falha ao disparar extração</p>
+            <p class="text-red-500">${esc(msg)}</p>
+            <p class="text-gray-500 mt-2 text-xs">Verifique GITHUB_TOKEN e os secrets CLIENT_EMAIL, CLIENT_SENHA e DATABASE_URL na Vercel.</p>
+          </div>
+        </div>`;
+    }
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function stopMDMonitor() {
+  if (mdMonitorTimer) { clearInterval(mdMonitorTimer); mdMonitorTimer = null; }
+}
+
+async function resumeMDMonitorIfActive() {
+  try {
+    const data = await githubApiFetch("/api/github-runs", {
+      params: { per_page: 5, page: 1, workflow_id: "musicdelivery.yml" },
+    });
+    const runs = data?.workflow_runs || [];
+    const active = runs.find((r) => {
+      if (r.conclusion) return false;
+      const t = new Date(r.created_at || 0).getTime();
+      return !isNaN(t) && Date.now() - t < 3 * 60 * 60 * 1000;
+    });
+    if (active) startMDMonitor();
+  } catch (_) {
+    // Sem token ou sem-run: segue sem monitor.
+  }
+}
+
+function startMDMonitor() {
+  stopMDMonitor();
+  const monitor = document.getElementById("active-monitor-md");
+  if (!monitor) return;
+  monitor.classList.remove("hidden");
+  monitor.innerHTML = `<p class="text-sm text-emerald-600">Localizando execução...</p>`;
+
+  let trackedId = null;
+  const tick = async () => {
+    try {
+      const data = await githubApiFetch("/api/github-runs", {
+        params: { per_page: 5, page: 1, workflow_id: "musicdelivery.yml", include_jobs: "1" },
+      });
+      const runs = data?.workflow_runs || [];
+      let run = trackedId ? runs.find((r) => r.id === trackedId) : null;
+      if (!run) {
+        run = runs.find((r) => {
+          if (r.conclusion) return false;
+          const t = new Date(r.created_at || 0).getTime();
+          return !isNaN(t) && Date.now() - t < 10 * 60 * 1000;
+        }) || runs[0] || null;
+        if (run) trackedId = run.id;
+      }
+      if (!run) {
+        monitor.innerHTML = `<p class="text-sm text-gray-400">Aguardando o GitHub registrar a execução…</p>`;
+        return;
+      }
+      const ini = new Date(run.started_at || run.run_started_at || run.created_at || Date.now()).getTime();
+      const elapsed = fmtDuration(Math.max(0, Date.now() - ini));
+      const resumo = run.job_summary || {};
+      const etapa = resumo.current_step || (run.status === "queued" ? "Na fila" : "Executando");
+      const done = resumo.steps_done;
+      const totalSteps = resumo.steps_total;
+      const progresso = done && totalSteps ? ` · etapa ${done}/${totalSteps}` : "";
+      const Finished = Boolean(run.conclusion);
+      const concl = String(run.conclusion || "").toLowerCase();
+      const cor = Finished ? (concl === "success" ? "text-emerald-600" : "text-rose-600") : "text-emerald-600";
+      const label = Finished ? (concl === "success" ? "Concluído" : `Encerrado: ${run.conclusion}`) : `Em andamento — ${etapa}${progresso}`;
+      monitor.innerHTML = `
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <p class="text-sm font-semibold ${cor}">Clientes MD #${esc(run.run_number ?? "?")} — ${esc(label)}</p>
+            <p class="text-[11px] text-gray-400 mt-1">Decorrido: ${esc(elapsed)}</p>
+          </div>
+          <div class="flex items-center gap-2">
+            ${Finished ? `<button onclick="stopMDMonitor();document.getElementById('active-monitor-md').classList.add('hidden')" class="px-3 py-1.5 text-xs border border-gray-200 dark:border-gray-700 rounded-lg">Fechar</button>` : ""}
+            ${run.html_url ? `<a href="${esc(run.html_url)}" target="_blank" rel="noopener" class="px-3 py-1.5 text-xs text-emerald-700 border border-emerald-200 rounded-lg">Ver no GitHub ↗</a>` : ""}
+          </div>
+        </div>`;
+      if (Finished) stopMDMonitor();
+    } catch (err) {
+      monitor.innerHTML = `<p class="text-sm text-rose-500">Erro ao consultar status: ${esc(err.message)}</p>`;
+    }
+  };
+  tick();
+  mdMonitorTimer = setInterval(tick, 8000);
 }
 
 function saveSettings() {
@@ -2702,7 +2824,14 @@ async function carregarClientesStats() {
     setTxt("md-card-playlists", s.playlists ?? "--");
     setTxt(
       "md-card-playlists-sub",
-      s.clientes_com_playlist ? `${s.clientes_com_playlist} clientes com playlist` : ""
+      s.playlists_detalhadas
+        ? `${s.playlists_detalhadas} detalhadas · ${s.vinculos || 0} vínculos`
+        : ""
+    );
+    setTxt("md-card-cruzados", s.vinculos_cruzados ?? "--");
+    setTxt(
+      "md-card-cruzados-sub",
+      s.vinculos ? `${s.vinculos_cruzados || 0} de ${s.vinculos} vínculos` : ""
     );
     const sel = document.getElementById("filtro-md-estado");
     if (sel) {
@@ -2819,7 +2948,8 @@ function ordenarClientes(coluna) {
 }
 
 function mdInfo(label, value) {
-  return `<div><p class="text-[11px] uppercase tracking-wide text-gray-400">${esc(label)}</p><p class="text-sm">${value ? esc(value) : "—"}</p></div>`;
+  const filled = value === 0 || value === "0" || Boolean(value);
+  return `<div><p class="text-[11px] uppercase tracking-wide text-gray-400">${esc(label)}</p><p class="text-sm">${filled ? esc(value) : "—"}</p></div>`;
 }
 
 async function abrirDetalheCliente(id) {
@@ -2851,10 +2981,8 @@ function fecharDetalheCliente() {
 
 function montarDetalheClienteHtml(d) {
   const c = d.cliente || {};
-  const cfg = d.configuracao;
   const contatos = d.contatos || [];
   const playlists = d.playlists || [];
-  const docs = d.documentos || [];
   const statusLabel = c.status_listagem || (c.status === 1 ? "Ativo" : "Inativo");
   const local = [c.cidade, c.estado].filter(Boolean).join(" / ");
 
@@ -2873,31 +3001,17 @@ function montarDetalheClienteHtml(d) {
 
   const playlistLinhas = playlists.length
     ? playlists
-        .map(
-          (p) => `<tr>
-            <td class="px-3 py-2 text-xs font-mono"><a class="text-indigo-600 hover:underline" href="${esc(p.url || "#")}" target="_blank" rel="noopener">${esc(p.codigo || p.playlist_id || "—")}</a></td>
-            <td class="px-3 py-2 text-xs">${esc(p.nome || "—")}</td>
-            <td class="px-3 py-2 text-xs">${esc(p.data_vinculacao || "—")}</td>
-            <td class="px-3 py-2 text-xs">${p.nao_mesclar ? "Sim" : "—"}</td>
-          </tr>`
-        )
+        .map((p) => {
+          const det = p.detalhe;
+          return `<tr class="hover:bg-indigo-50/60 dark:hover:bg-indigo-500/5 cursor-pointer" onclick="abrirDetalhePlaylist(${Number(p.playlist_id)})" title="Ver dados da playlist">
+            <td class="px-3 py-2 text-xs font-mono"><a class="text-indigo-600 hover:underline" href="${esc(p.url || "#")}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${esc(p.codigo || p.playlist_id || "—")}</a></td>
+            <td class="px-3 py-2 text-xs font-medium">${esc(det?.titulo || p.nome || "—")}${p.nao_mesclar ? ` <span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">não mesclar</span>` : ""}</td>
+            <td class="px-3 py-2 text-xs text-gray-500">${esc(det?.data_criacao || "—")}</td>
+            <td class="px-3 py-2 text-xs text-right">${det ? Number(det.musicas_count) || 0 : "—"}</td>
+          </tr>`;
+        })
         .join("")
     : `<tr><td colspan="4" class="px-3 py-3 text-xs text-gray-400">Sem playlists vinculadas.</td></tr>`;
-
-  const docLinhas = docs.length
-    ? docs
-        .map(
-          (doc) => `<li class="text-xs flex items-center justify-between gap-2 py-1 border-b border-gray-100 dark:border-gray-800 last:border-0">
-            <span>${esc(doc.nome || "—")}</span>
-            <span class="text-gray-400">${esc(doc.data_upload || "")}</span>
-          </li>`
-        )
-        .join("")
-    : `<p class="text-xs text-gray-400">Sem documentos.</p>`;
-
-  const configHtml = cfg
-    ? `${mdInfo("Sazonal", cfg.sazonal ? "Sim" : "Não")}${mdInfo("Período sazonal", [cfg.data_inicio, cfg.data_fim].filter(Boolean).join(" a "))}${mdInfo("Músicas sazonais", cfg.musicas_sazonais)}${mdInfo("Músicas base", cfg.musicas_playlist_base)}`
-    : `<p class="text-xs text-gray-400">Sem configuração registrada.</p>`;
 
   return `
     <div class="flex items-start justify-between gap-4 mb-4">
@@ -2924,16 +3038,10 @@ function montarDetalheClienteHtml(d) {
       ${mdInfo("Responsável", c.nome_responsavel)}
     </div>
 
-    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-      <div class="rounded-lg border border-gray-200 dark:border-gray-800 p-3">
-        <p class="text-xs font-semibold mb-2">Endereço</p>
-        <p class="text-sm">${esc(c.endereco || "—")}</p>
-        <p class="text-xs text-gray-500">${esc([c.cidade, c.estado, c.cep].filter(Boolean).join(" · ") || "")}</p>
-      </div>
-      <div class="rounded-lg border border-gray-200 dark:border-gray-800 p-3">
-        <p class="text-xs font-semibold mb-2">Configuração</p>
-        <div class="grid grid-cols-2 gap-2">${configHtml}</div>
-      </div>
+    <div class="rounded-lg border border-gray-200 dark:border-gray-800 p-3 mb-4">
+      <p class="text-xs font-semibold mb-1">Endereço</p>
+      <p class="text-sm">${esc(c.endereco || "—")}</p>
+      <p class="text-xs text-gray-500">${esc([c.cidade, c.estado, c.cep].filter(Boolean).join(" · ") || "")}</p>
     </div>
 
     <div class="rounded-lg border border-gray-200 dark:border-gray-800 mb-4">
@@ -2941,16 +3049,149 @@ function montarDetalheClienteHtml(d) {
       <table class="w-full"><tbody class="divide-y divide-gray-100 dark:divide-gray-800">${contatoLinhas}</tbody></table>
     </div>
 
+    <div class="rounded-lg border border-gray-200 dark:border-gray-800">
+      <p class="text-xs font-semibold px-3 py-2 border-b border-gray-200 dark:border-gray-800">
+        Histórico de playlist (${playlists.length}) — clique em uma linha para ver os dados da playlist
+      </p>
+      <div class="max-h-80 overflow-y-auto">
+        <table class="w-full">
+          <thead class="bg-gray-50 dark:bg-gray-800/60 text-[10px] uppercase text-gray-500">
+            <tr><th class="px-3 py-2 text-left">Código</th><th class="px-3 py-2 text-left">Playlist</th><th class="px-3 py-2 text-left">Criação</th><th class="px-3 py-2 text-right">Músicas</th></tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100 dark:divide-gray-800">${playlistLinhas}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+async function abrirDetalhePlaylist(playlistId) {
+  const modal = document.getElementById("md-playlist-modal");
+  const conteudo = document.getElementById("md-playlist-conteudo");
+  if (!modal || !Number.isFinite(playlistId)) return;
+  modal.classList.remove("hidden");
+  modal.classList.add("flex");
+  if (conteudo) conteudo.innerHTML = `<p class="text-sm text-gray-400">Carregando dados da playlist ${esc(playlistId)}...</p>`;
+  try {
+    const resp = await clientesApiFetch(`/api/md-clientes?playlist=${encodeURIComponent(playlistId)}`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const d = await resp.json();
+    if (conteudo) conteudo.innerHTML = montarDetalhePlaylistHtml(d, playlistId);
+  } catch (e) {
+    if (conteudo) conteudo.innerHTML = `<p class="text-sm text-rose-500">Erro ao carregar playlist: ${esc(e.message)}</p>`;
+  }
+}
+
+function fecharDetalhePlaylist() {
+  const modal = document.getElementById("md-playlist-modal");
+  if (!modal) return;
+  modal.classList.add("hidden");
+  modal.classList.remove("flex");
+}
+
+function montarDetalhePlaylistHtml(d, playlistId) {
+  const det = d.detalhe || {};
+  const vinculos = d.vinculos || [];
+  const clientes = d.clientes || [];
+  const musicas = det.musicas || [];
+  const titulo = det.titulo || `Playlist ${playlistId}`;
+  const periodo = [det.hour_start, det.hour_end].filter(Boolean).join(" às ");
+
+  const vinculoLinhas = vinculos.length
+    ? vinculos
+        .map(
+          (v) => `<tr>
+            <td class="px-3 py-2 text-xs">${esc(v.nome_cliente || "—")}</td>
+            <td class="px-3 py-2 text-xs font-mono">${esc(v.codigo_contrato || "—")}</td>
+            <td class="px-3 py-2 text-xs">${v.tocar_sazonal ? "Sim" : "—"}</td>
+            <td class="px-3 py-2 text-xs">${esc(v.data_inicial || "—")}</td>
+            <td class="px-3 py-2 text-xs">${esc(v.data_final || "—")}</td>
+            <td class="px-3 py-2 text-xs">${esc(v.contratante || "—")}</td>
+            <td class="px-3 py-2 text-xs">${esc(v.contrato_status || "—")}</td>
+            <td class="px-3 py-2 text-xs">${esc(v.contrato_termino || "—")}</td>
+          </tr>`
+        )
+        .join("")
+    : `<tr><td colspan="8" class="px-3 py-3 text-xs text-gray-400">Nenhum cliente vinculado a esta playlist.</td></tr>`;
+
+  const clienteLinhas = clientes.length
+    ? clientes
+        .map(
+          (c) => `<tr>
+            <td class="px-3 py-2 text-xs font-mono">${esc(c.id)}</td>
+            <td class="px-3 py-2 text-xs">${esc(c.nome_razaosocial || c.nome || "—")}</td>
+            <td class="px-3 py-2 text-xs">${esc(c.codigo || "—")}</td>
+            <td class="px-3 py-2 text-xs">${esc(c.data_vinculacao || "—")}</td>
+            <td class="px-3 py-2 text-xs">${c.status === 1 ? "Ativo" : "Inativo"}</td>
+          </tr>`
+        )
+        .join("")
+    : `<tr><td colspan="5" class="px-3 py-3 text-xs text-gray-400">Nenhum cliente MD usa esta playlist.</td></tr>`;
+
+  const musicasLinhas = musicas.length
+    ? musicas
+        .slice(0, 100)
+        .map(
+          (m) => `<tr><td class="px-3 py-1.5 text-xs">${esc(m.titulo_artista || "—")}</td><td class="px-3 py-1.5 text-xs font-mono">${esc(m.isrc || "—")}</td><td class="px-3 py-1.5 text-xs">${esc(m.data || "—")}</td></tr>`
+        )
+        .join("")
+    : `<tr><td colspan="3" class="px-3 py-3 text-xs text-gray-400">Nenhuma música coletada.</td></tr>`;
+
+  const musicasRestantes = musicas.length > 100
+    ? `<p class="text-[11px] text-gray-400 px-3 py-2">Mostrando 100 de ${musicas.length} músicas.</p>`
+    : "";
+
+  return `
+    <div class="flex items-start justify-between gap-4 mb-4">
+      <div>
+        <p class="text-[11px] font-mono text-gray-400">Playlist #${esc(playlistId)}</p>
+        <h3 class="text-lg font-bold">${esc(titulo)}</h3>
+        <p class="text-xs text-gray-500">${esc([det.tipo_playlist, det.genero].filter(Boolean).join(" · "))}</p>
+      </div>
+      <button onclick="fecharDetalhePlaylist()" class="px-3 py-1.5 text-xs border border-gray-200 dark:border-gray-700 rounded-lg">Fechar</button>
+    </div>
+
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+      ${mdInfo("Músicas", det.musicas_count ?? 0)}
+      ${mdInfo("Criação", det.data_criacao)}
+      ${mdInfo("Faixa horária", periodo)}
+      ${mdInfo("Idades", (det.idades || []).join(", "))}
+      ${mdInfo("Classes sociais", (det.classes_sociais || []).join(", "))}
+      ${mdInfo("Status", det.status_playlist ? "Ativa" : "Inativa")}
+      ${mdInfo("Vínculos", vinculos.length)}
+      ${mdInfo("Coletado em", det.coletado_em ? String(det.coletado_em).slice(0, 10) : "")}
+      ${mdInfo("Observações", det.observacoes)}
+    </div>
+
     <div class="rounded-lg border border-gray-200 dark:border-gray-800 mb-4">
-      <p class="text-xs font-semibold px-3 py-2 border-b border-gray-200 dark:border-gray-800">Playlists (${playlists.length})</p>
-      <div class="max-h-64 overflow-y-auto">
-        <table class="w-full"><tbody class="divide-y divide-gray-100 dark:divide-gray-800">${playlistLinhas}</tbody></table>
+      <p class="text-xs font-semibold px-3 py-2 border-b border-gray-200 dark:border-gray-800">Clientes vinculados à Playlist (${vinculos.length}) — cruzado com contratos do sistema</p>
+      <div class="overflow-x-auto max-h-72 overflow-y-auto">
+        <table class="w-full">
+          <thead class="bg-gray-50 dark:bg-gray-800/60 text-[10px] uppercase text-gray-500">
+            <tr><th class="px-3 py-2 text-left">Cliente</th><th class="px-3 py-2 text-left">Contrato</th><th class="px-3 py-2 text-left">Sazonal</th><th class="px-3 py-2 text-left">Início</th><th class="px-3 py-2 text-left">Fim</th><th class="px-3 py-2 text-left">Contratante</th><th class="px-3 py-2 text-left">Status</th><th class="px-3 py-2 text-left">Vencimento</th></tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100 dark:divide-gray-800">${vinculoLinhas}</tbody>
+        </table>
       </div>
     </div>
 
-    <div class="rounded-lg border border-gray-200 dark:border-gray-800 p-3">
-      <p class="text-xs font-semibold mb-2">Documentos (${docs.length})</p>
-      <ul>${docLinhas}</ul>
+    <div class="rounded-lg border border-gray-200 dark:border-gray-800 mb-4">
+      <p class="text-xs font-semibold px-3 py-2 border-b border-gray-200 dark:border-gray-800">Clientes MD que utilizam esta playlist (${clientes.length})</p>
+      <div class="max-h-56 overflow-y-auto">
+        <table class="w-full"><thead class="bg-gray-50 dark:bg-gray-800/60 text-[10px] uppercase text-gray-500">
+          <tr><th class="px-3 py-2 text-left">Cód.</th><th class="px-3 py-2 text-left">Cliente</th><th class="px-3 py-2 text-left">Playlist</th><th class="px-3 py-2 text-left">Vinculação</th><th class="px-3 py-2 text-left">Status</th></tr>
+        </thead><tbody class="divide-y divide-gray-100 dark:divide-gray-800">${clienteLinhas}</tbody></table>
+      </div>
+    </div>
+
+    <div class="rounded-lg border border-gray-200 dark:border-gray-800">
+      <p class="text-xs font-semibold px-3 py-2 border-b border-gray-200 dark:border-gray-800">Músicas da playlist (${det.musicas_count ?? musicas.length})</p>
+      <div class="max-h-72 overflow-y-auto">
+        <table class="w-full"><thead class="bg-gray-50 dark:bg-gray-800/60 text-[10px] uppercase text-gray-500">
+          <tr><th class="px-3 py-2 text-left">Título / Artista</th><th class="px-3 py-2 text-left">ISRC</th><th class="px-3 py-2 text-left">Data</th></tr>
+        </thead><tbody class="divide-y divide-gray-100 dark:divide-gray-800">${musicasLinhas}</tbody></table>
+      </div>
+      ${musicasRestantes}
     </div>
   `;
 }
