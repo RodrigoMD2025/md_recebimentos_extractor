@@ -2881,10 +2881,6 @@ async function carregarClientes(page = 1) {
       ? data
           .map((c) => {
             const local = [c.cidade, c.estado].filter(Boolean).join(" / ");
-            const contrato =
-              c.contrato_vinculado && !/não existe/i.test(c.contrato_vinculado)
-                ? c.contrato_vinculado
-                : "—";
             return `
         <tr class="hover:bg-indigo-50/60 dark:hover:bg-indigo-500/5 cursor-pointer" onclick="abrirDetalheCliente(${Number(c.id)})">
           <td class="px-4 py-3 font-mono text-xs">${esc(c.id)}</td>
@@ -2893,12 +2889,11 @@ async function carregarClientes(page = 1) {
           <td class="px-4 py-3 text-xs font-mono">${esc(c.cnpj || "—")}</td>
           <td class="px-4 py-3 text-xs">${esc(local || "—")}</td>
           <td class="px-4 py-3 text-xs">${Number(c.playlist_count) || 0}</td>
-          <td class="px-4 py-3 text-xs">${esc(contrato)}</td>
           <td class="px-4 py-3"><span class="badge ${c.status === 1 ? "badge-success" : "badge-neutral"}">${esc(c.status_listagem || (c.status === 1 ? "Ativo" : "Inativo"))}</span></td>
         </tr>`;
           })
           .join("")
-      : `<tr><td colspan="8" class="px-4 py-8 text-center text-gray-400">Nenhum cliente encontrado.</td></tr>`;
+      : `<tr><td colspan="7" class="px-4 py-8 text-center text-gray-400">Nenhum cliente encontrado.</td></tr>`;
 
     if (loadingEl) loadingEl.classList.add("hidden");
     if (tableEl) tableEl.classList.remove("hidden");
@@ -3215,10 +3210,10 @@ async function exportarClientesCSV() {
       page++;
     }
     if (!linhas.length) return toast("Nenhum cliente para exportar", "warning");
-    const headers = ["Codigo", "Razao Social", "Fantasia", "CNPJ", "Cidade", "UF", "Playlists", "Contrato", "Status"];
+    const headers = ["Codigo", "Razao Social", "Fantasia", "CNPJ", "Cidade", "UF", "Playlists", "Status"];
     const rows = linhas.map((c) => [
       csvEsc(c.id), csvEsc(c.nome_razaosocial), csvEsc(c.nome_fantasia), csvEsc(c.cnpj),
-      csvEsc(c.cidade), csvEsc(c.estado), csvEsc(c.playlist_count), csvEsc(c.contrato_vinculado), csvEsc(c.status_listagem),
+      csvEsc(c.cidade), csvEsc(c.estado), csvEsc(c.playlist_count), csvEsc(c.status_listagem),
     ]);
     const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
     downloadBlob(new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" }), "clientes-music-delivery.csv");

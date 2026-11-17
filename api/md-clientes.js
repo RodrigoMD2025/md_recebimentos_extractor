@@ -21,7 +21,6 @@ const LIST_FIELDS = `
   c.status,
   c.status_listagem,
   c.tipo,
-  c.contrato_vinculado,
   (SELECT count(*) FROM md_playlists p WHERE p.cliente_id = c.id) AS playlist_count
 `;
 
